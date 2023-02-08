@@ -1,4 +1,4 @@
-﻿using ControllerCommon.Managers;
+using ControllerCommon.Managers;
 using Newtonsoft.Json;
 using PrecisionTiming;
 using System;
@@ -103,10 +103,14 @@ namespace HandheldCompanion.Managers
         private static MemoryMappedViewAccessor MemoryAccessor;
 
         private static SharedMemory HWiNFOMemory;
-        private static List<Sensor> Sensors;
+        public static List<Sensor> Sensors;
 
         private static object updateLock = new();
         private static bool IsInitialized;
+
+        public static int process_value_fps;
+        public static float process_value_tdp_actual;
+        public static float process_value_frametime_ms;
 
         static HWiNFOManager()
         {
@@ -197,8 +201,16 @@ namespace HandheldCompanion.Managers
                         Elements = new List<SensorElement>()
                     };
                     Sensors.Add(obj);
+
+                    LogManager.LogInformation("SensorNames availibe: {0}", (string)obj.NameOrig);
+                    for (uint index2 = 0; index2 < obj.Elements.Count(); ++index2)
+                    {
+                        LogManager.LogInformation("SensorElements: {0}", obj.Elements[(int)index2].szLabelOrig);
+                    }
                 }
             }
+
+            
         }
 
         public static void ReadSensors()

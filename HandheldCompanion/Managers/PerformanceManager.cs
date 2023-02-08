@@ -1,4 +1,4 @@
-﻿using ControllerCommon;
+using ControllerCommon;
 using ControllerCommon.Managers;
 using ControllerCommon.Processor;
 using ControllerCommon.Utils;
@@ -175,6 +175,21 @@ namespace HandheldCompanion.Managers
             {
                 bool TDPdone = false;
                 bool MSRdone = false;
+
+                HWiNFOManager.ReadSensors();
+
+                foreach (HWiNFOManager.Sensor Sensor in HWiNFOManager.Sensors)
+                {
+                    if (Sensor.NameOrig == "RTSS") {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+
+                            if (Element.szLabelOrig == "Framerate"){ 
+                                LogManager.LogInformation("FPS: {0}", Element.Value);
+                            }
+
+                    }
+                }
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))

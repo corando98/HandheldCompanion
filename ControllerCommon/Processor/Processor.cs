@@ -1,4 +1,4 @@
-﻿using ControllerCommon.Managers;
+using ControllerCommon.Managers;
 using ControllerCommon.Processor.AMD;
 using ControllerCommon.Processor.Intel;
 using System;
@@ -118,7 +118,7 @@ namespace ControllerCommon.Processor
 
         public virtual void SetTDPLimit(PowerType type, double limit, int result = 0)
         {
-            LogManager.LogInformation("User requested {0} TDP limit: {1}, error code: {2}", type, limit, result);
+            //LogManager.LogInformation("User requested {0} TDP limit: {1}, error code: {2}", type, limit, result);
         }
 
         public virtual void SetGPUClock(double clock, int result = 0)
