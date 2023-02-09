@@ -65,9 +65,14 @@ namespace HandheldCompanion.Managers
         protected object gfxLock = new();
         private bool gfxWatchdogPendingStop;
 
+        private Timer sensorWatchdog;
+        protected object sensorLock = new();
+        private bool sensorWatchdogPendingStop;
+
         private const short INTERVAL_DEFAULT = 3000;            // default interval between value scans
         private const short INTERVAL_INTEL = 5000;              // intel interval between value scans
         private const short INTERVAL_DEGRADED = 10000;          // degraded interval between value scans
+        private const short INTERVAL_SENSOR = 100;
 
         public event LimitChangedHandler PowerLimitChanged;
         public delegate void LimitChangedHandler(PowerType type, int limit);
@@ -102,6 +107,9 @@ namespace HandheldCompanion.Managers
 
             gfxWatchdog = new Timer() { Interval = INTERVAL_DEFAULT, AutoReset = true, Enabled = false };
             gfxWatchdog.Elapsed += gfxWatchdog_Elapsed;
+
+            sensorWatchdog = new Timer() { Interval = INTERVAL_SENSOR, AutoReset = true, Enabled = true };
+            sensorWatchdog.Elapsed += sensorWatchdog_Elapsed;
 
             ProfileManager.Applied += ProfileManager_Applied;
             ProfileManager.Updated += ProfileManager_Updated;
@@ -175,21 +183,6 @@ namespace HandheldCompanion.Managers
             {
                 bool TDPdone = false;
                 bool MSRdone = false;
-
-                HWiNFOManager.ReadSensors();
-
-                foreach (HWiNFOManager.Sensor Sensor in HWiNFOManager.Sensors)
-                {
-                    if (Sensor.NameOrig == "RTSS") {
-
-                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
-
-                            if (Element.szLabelOrig == "Framerate"){ 
-                                LogManager.LogInformation("FPS: {0}", Element.Value);
-                            }
-
-                    }
-                }
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -307,6 +300,69 @@ namespace HandheldCompanion.Managers
                 Monitor.Exit(gfxLock);
             }
         }
+
+        private void sensorWatchdog_Elapsed(object? sender, ElapsedEventArgs e)
+        {
+
+            if (processor is null || !processor.IsInitialized)
+                return;
+
+            if (Monitor.TryEnter(sensorLock))
+            {
+
+                HWiNFOManager.ReadSensors();
+
+                double framerate = 0.0;
+                double frametime = 0.0;
+                double tdp_actual = 0.0;
+                double tdp_set = StoredTDP[0];
+
+                if (HWiNFOManager.Sensors is null)
+                    return;
+
+                foreach (HWiNFOManager.Sensor Sensor in HWiNFOManager.Sensors)
+                {
+                    if (Sensor.NameOrig == "RTSS")
+                    {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+                        {
+
+                            if (Element.szLabelOrig == "Framerate")
+                            {
+                                framerate = Element.Value;
+                            }
+
+                            if (Element.szLabelOrig == "Frame Time")
+                            {
+                                frametime = Element.Value;
+                            }
+                        }
+                    }
+
+                    if (Sensor.NameOrig == "CPU [#0]: AMD Ryzen 7 4800U: Enhanced")
+                    {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+                        {
+
+                            if (Element.szLabelOrig == "CPU Package Power")
+                            {
+                                tdp_actual = Element.Value;
+                            }
+                        }
+                    }
+
+                    
+
+                }
+
+                LogManager.LogInformation("TDPControlData {0:0.000} {1:0.000} {2:0.000} {3:0.000}", frametime, framerate, tdp_set, tdp_actual);
+
+                Monitor.Exit(sensorLock);
+            }
+        }
+
 
         internal void StartGPUWatchdog()
         {
