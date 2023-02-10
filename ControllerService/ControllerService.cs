@@ -416,7 +416,7 @@ namespace ControllerService
                 }
 
                 ApplySetting(name, property);
-                LogManager.LogDebug("{0} set to {1}", name, property);
+                //LogManager.LogDebug("{0} set to {1}", name, property);
             }
         }
 

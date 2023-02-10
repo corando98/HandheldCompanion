@@ -1,4 +1,5 @@
 using ControllerCommon.Managers;
+using ControllerCommon.Processor;
 using Newtonsoft.Json;
 using PrecisionTiming;
 using System;
@@ -93,7 +94,7 @@ namespace HandheldCompanion.Managers
         private const int HWiNFO_SENSORS_STRING_LEN = 128;
         private const int HWiNFO_UNIT_STRING_LEN = 16;
 
-        private const short INTERVAL_UPDATE = 1000;                 // interval between two SharedMemory update
+        private const short INTERVAL_UPDATE = 100;                 // interval between two SharedMemory update
         private const short INTERVAL_SHAREDMEMORY = 3000;           // interval between two SharedMemory access check
 
         private static PrecisionTimer UpdateTimer;
@@ -108,9 +109,9 @@ namespace HandheldCompanion.Managers
         private static object updateLock = new();
         private static bool IsInitialized;
 
-        public static int process_value_fps;
-        public static float process_value_tdp_actual;
-        public static float process_value_frametime_ms;
+        public static double process_value_fps;
+        public static double process_value_tdp_actual;
+        public static double process_value_frametime_ms;
 
         static HWiNFOManager()
         {
@@ -119,6 +120,7 @@ namespace HandheldCompanion.Managers
             UpdateTimer = new PrecisionTimer();
             UpdateTimer.SetInterval(INTERVAL_UPDATE);
             UpdateTimer.SetAutoResetMode(true);
+            UpdateTimer.Tick += (e, sender) => UpdateTimerTicked();
 
             SharedMemoryTimer = new PrecisionTimer();
             SharedMemoryTimer.SetInterval(INTERVAL_SHAREDMEMORY);
@@ -159,6 +161,7 @@ namespace HandheldCompanion.Managers
         {
             // start HWiNFO watcher
             SharedMemoryTimer.Start();
+            UpdateTimer.Start();
 
             IsInitialized = true;
             Initialized?.Invoke();
@@ -210,7 +213,7 @@ namespace HandheldCompanion.Managers
                 }
             }
 
-            
+
         }
 
         public static void ReadSensors()
@@ -229,6 +232,43 @@ namespace HandheldCompanion.Managers
                         Sensors[(int)structure.dwSensorIndex].Elements.Add(structure);
                     }
                 }
+
+                
+                foreach (Sensor Sensor in Sensors)
+                {
+                    if (Sensor.NameOrig == "RTSS")
+                    {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+                        {
+
+                            if (Element.szLabelOrig == "Framerate")
+                            {
+                                process_value_fps = Element.Value;
+                            }
+
+                            if (Element.szLabelOrig == "Frame Time")
+                            {
+                                process_value_frametime_ms = Element.Value;
+                            }
+                        }
+                    }
+
+                    if (Sensor.NameOrig == "CPU [#0]: AMD Ryzen 7 4800U: Enhanced")
+                    {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+                        {
+
+                            if (Element.szLabelOrig == "CPU Package Power")
+                            {
+                                process_value_tdp_actual = Element.Value;
+                            }
+                        }
+                    }
+
+                }
+
             }
             catch
             {
@@ -236,6 +276,11 @@ namespace HandheldCompanion.Managers
                 MemoryMapped = null;
                 Failed?.Invoke();
             }
+        }
+
+        private static void UpdateTimerTicked()
+        {
+                ReadSensors();
         }
     }
 }
