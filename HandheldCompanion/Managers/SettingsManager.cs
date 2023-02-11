@@ -127,6 +127,14 @@ namespace HandheldCompanion.Managers
                         return TDPvalue != 0 ? Properties.Settings.Default["QuickToolsPerformanceTDPBoostValue"] : MainWindow.handheldDevice.nTDP[(int)PowerType.Fast];
                     }
 
+                case "QuickToolsPerformanceAutoTDPFPSValue":
+                    {
+                        bool TDPoverride = GetBoolean("QuickToolsPerformanceAutoTDPEnabled");
+
+                        double FPSvalue = Convert.ToDouble(Properties.Settings.Default["QuickToolsPerformanceAutoTDPFPSValue"]);
+                        return FPSvalue;
+                    }
+
                 case "QuickToolsPerformanceGPUValue":
                     {
                         bool GPUoverride = GetBoolean("QuickToolsPerformanceGPUEnabled");

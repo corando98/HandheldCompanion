@@ -106,6 +106,53 @@
         <!-- Separator -->
         <Separator BorderBrush="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Opacity="0.25" BorderThickness="0 1 0 0" />
 
+        <!-- Auto TDP -->
+        <ui:SimpleStackPanel Spacing="2">
+            <!-- Header -->
+            <Border                      
+                        Padding="15,6,15,6"
+                        CornerRadius="{DynamicResource ControlCornerRadius}">
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition></ColumnDefinition>
+                        <ColumnDefinition Width="0.2*" MinWidth="80"></ColumnDefinition>
+                    </Grid.ColumnDefinitions>
+
+                    <DockPanel>
+                        <ui:FontIcon FontFamily="{DynamicResource SymbolThemeFontFamily}" Glyph="&#xE8CB;" Height="40" HorizontalAlignment="Center"/>
+
+                        <ui:SimpleStackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                            <TextBlock Text="Auto TDP" FontSize="14"/>
+                            <TextBlock Text="Control TDP automatically to reach target FPS" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" FontSize="12" TextWrapping="Wrap"/>
+                        </ui:SimpleStackPanel>
+                    </DockPanel>
+
+                    <ui:ToggleSwitch Name="AutoTDPToggle" Grid.Column="1" IsEnabled="False" Toggled="AutoTDPToggle_Toggled" />
+                </Grid>
+            </Border>
+
+            <!-- FPS Target -->
+            <Border
+                Padding="15,6,15,6"
+                CornerRadius="{DynamicResource ControlCornerRadius}"
+                Visibility="{Binding ElementName=AutoTDPToggle, Path=IsOn, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                <StackPanel>
+                    <DockPanel Grid.Column="1" Margin="8,0,0,0" ScrollViewer.PanningMode="HorizontalOnly">
+                        <TextBlock Width="20" TextAlignment="Center" VerticalAlignment="Center" HorizontalAlignment="Center" Text="{Binding Value, StringFormat=N0, ElementName=AutoTDPFPSSlider, Mode=OneWay}" IsManipulationEnabled="True" />
+                        <TextBlock VerticalAlignment="Center" Text="FPS" />
+                        <Slider Name="AutoTDPFPSSlider" Margin="8,0,0,0" HorizontalAlignment="Stretch" VerticalAlignment="Center" AutoToolTipPlacement="TopLeft" Maximum="60" TickFrequency="10" TickPlacement="BottomRight" Minimum="30" AutoToolTipPrecision="0" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Value="40"
+					    ValueChanged="AutoTDPFPSSlider_ValueChanged"
+					    SmallChange="1" LargeChange="5"/>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
+        </ui:SimpleStackPanel>
+
+        <!-- Separator -->
+        <Separator BorderBrush="{DynamicResource SystemControlBackgroundChromeMediumBrush}" Opacity="0.25" BorderThickness="0 1 0 0" />
+
         <!-- Manual GPU Clock Control -->
         <Border
             Padding="15,6,15,6"

@@ -92,6 +92,9 @@ namespace HandheldCompanion.Views.QuickPages
                     case "QuickToolsPerformanceTDPEnabled":
                         TDPToggle.IsOn = Convert.ToBoolean(value);
                         break;
+                    case "QuickToolsPerformanceAutoTDPEnabled":
+                        AutoTDPToggle.IsOn = Convert.ToBoolean(value);
+                        break;
                     case "QuickToolsPerformanceGPUEnabled":
                         GPUToggle.IsOn = Convert.ToBoolean(value);
                         break;
@@ -105,10 +108,15 @@ namespace HandheldCompanion.Views.QuickPages
                         break;
                     case "QuickToolsPerformanceTDPBoostValue":
                         {
+                            AutoTDPFPSSlider.Value = Convert.ToDouble(value);
+                        }
+                        break;
+                    case "QuickToolsPerformanceAutoTDPFPSValue":
+                        {
                             double TDP = Convert.ToDouble(value);
 
-                            if (TDPBoostSlider.Minimum <= TDP && TDPBoostSlider.Maximum >= TDP)
-                                TDPBoostSlider.Value = TDP;
+                            //if (TDPBoostSlider.Minimum <= TDP && TDPBoostSlider.Maximum >= TDP)
+                            //    TDPBoostSlider.Value = TDP;
                         }
                         break;
                     case "QuickToolsPerformanceGPUValue":
@@ -164,12 +172,12 @@ namespace HandheldCompanion.Views.QuickPages
             {
                 if (currentProfile is not null)
                 {
-                    TDPToggle.IsEnabled = TDPSustainedSlider.IsEnabled = TDPBoostSlider.IsEnabled = CanChangeTDP && !currentProfile.TDP_override;
+                    AutoTDPToggle.IsEnabled = TDPToggle.IsEnabled = TDPSustainedSlider.IsEnabled = TDPBoostSlider.IsEnabled = CanChangeTDP && !currentProfile.TDP_override;
                     TDPWarning.Visibility = currentProfile.TDP_override ? Visibility.Visible : Visibility.Collapsed;
                 }
                 else
                 {
-                    TDPToggle.IsEnabled = TDPSustainedSlider.IsEnabled = TDPBoostSlider.IsEnabled = CanChangeTDP;
+                    AutoTDPToggle.IsEnabled = TDPToggle.IsEnabled = TDPSustainedSlider.IsEnabled = TDPBoostSlider.IsEnabled = CanChangeTDP;
                     TDPWarning.Visibility = Visibility.Collapsed;
                 }
 
@@ -253,6 +261,44 @@ namespace HandheldCompanion.Views.QuickPages
                 return;
 
             SettingsManager.SetProperty("QuickToolsPerformanceTDPEnabled", TDPToggle.IsOn);
+        }
+
+        private void AutoTDPToggle_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (AutoTDPToggle.IsOn)
+            {
+                //MainWindow.performanceManager.RequestTDP(PowerType.Slow, TDPSustainedSlider.Value);
+                //MainWindow.performanceManager.RequestTDP(PowerType.Stapm, TDPSustainedSlider.Value);
+                //MainWindow.performanceManager.RequestTDP(PowerType.Fast, TDPBoostSlider.Value);
+
+                MainWindow.performanceManager.StartTDPWatchdog();
+            }
+            else
+            {
+                // restore default TDP and halt watchdog
+                MainWindow.performanceManager.RequestTDP(MainWindow.handheldDevice.nTDP);
+
+                MainWindow.performanceManager.StopTDPWatchdog();
+            }
+
+            if (!SettingsManager.IsInitialized)
+                return;
+
+            SettingsManager.SetProperty("QuickToolsPerformanceAutoTDPEnabled", AutoTDPToggle.IsOn);
+        }
+
+
+        private void AutoTDPFPSSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!SettingsManager.GetBoolean("QuickToolsPerformanceAutoTDPEnabled"))
+                return;
+
+            //MainWindow.performanceManager.RequestTDP(PowerType.Slow, TDPSustainedSlider.Value);
+
+            if (!SettingsManager.IsInitialized)
+                return;
+
+            SettingsManager.SetProperty("QuickToolsPerformanceAutoTDPFPSValue", AutoTDPFPSSlider.Value);
         }
 
         private void GPUToggle_Toggled(object sender, RoutedEventArgs e)
