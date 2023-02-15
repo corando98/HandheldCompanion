@@ -267,9 +267,7 @@ namespace HandheldCompanion.Views.QuickPages
         {
             if (AutoTDPToggle.IsOn)
             {
-                //MainWindow.performanceManager.RequestTDP(PowerType.Slow, TDPSustainedSlider.Value);
-                //MainWindow.performanceManager.RequestTDP(PowerType.Stapm, TDPSustainedSlider.Value);
-                //MainWindow.performanceManager.RequestTDP(PowerType.Fast, TDPBoostSlider.Value);
+                SettingsManager.SetProperty("QuickToolsPerformanceAutoTDPFPSValue", AutoTDPFPSSlider.Value);
 
                 MainWindow.performanceManager.StartTDPWatchdog();
             }
@@ -292,8 +290,6 @@ namespace HandheldCompanion.Views.QuickPages
         {
             if (!SettingsManager.GetBoolean("QuickToolsPerformanceAutoTDPEnabled"))
                 return;
-
-            //MainWindow.performanceManager.RequestTDP(PowerType.Slow, TDPSustainedSlider.Value);
 
             if (!SettingsManager.IsInitialized)
                 return;

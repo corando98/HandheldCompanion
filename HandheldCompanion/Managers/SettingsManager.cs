@@ -70,7 +70,7 @@ namespace HandheldCompanion.Managers
 
                 SettingValueChanged?.Invoke(name, value);
 
-                LogManager.LogDebug("Settings {0} set to {1}", name, value);
+                //LogManager.LogDebug("Settings {0} set to {1}", name, value);
             }
             catch { }
         }

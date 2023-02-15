@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Timers;
+using Windows.ApplicationModel.Store;
 using Timer = System.Timers.Timer;
 
 namespace HandheldCompanion.Managers
@@ -87,6 +88,7 @@ namespace HandheldCompanion.Managers
         private double[] FallbackTDP = new double[3];   // used to store fallback TDP
         private double[] StoredTDP = new double[3];     // used to store TDP
         private double[] CurrentTDP = new double[5];    // used to store current TDP
+        double TDPSetpoint = 10.0;
 
         // GPU limits
         private double FallbackGfxClock;
@@ -183,8 +185,21 @@ namespace HandheldCompanion.Managers
             {
                 bool TDPdone = false;
                 bool MSRdone = false;
+                
+                double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.000}", StoredTDP[0]);
+                // Idea, take measurements (10) since last interval, determine which was closest to wanted fps, use that as ratio
+
+                if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0){
+                    TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
+                }
+
+                // HWiNFOManager.process_value_tdp_actual or set as ratio?
+
+                // Update all stored TDP values
+                StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
+
+                LogManager.LogInformation("TDPSet;;;;{0:0.000};{1:0.000}", StoredTDP[0], WantedFPS);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
