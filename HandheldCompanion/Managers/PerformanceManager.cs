@@ -88,7 +88,16 @@ namespace HandheldCompanion.Managers
         private double[] FallbackTDP = new double[3];   // used to store fallback TDP
         private double[] StoredTDP = new double[3];     // used to store TDP
         private double[] CurrentTDP = new double[5];    // used to store current TDP
-        double TDPSetpoint = 10.0;
+        
+        
+        private double TDPSetpoint = 10.0;
+        // Hardcode performance curve of Ghostrunner
+        private double[,] PerformanceCurve = new double[,] {  { 5, 15 },
+                                                                  { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 },
+                                                                  { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 },
+                                                                  { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },
+                                                                  { 21, 81 }, { 22, 81 }, { 23, 81 }, { 24, 82 }, { 25, 84 },
+                                                               };
 
         // GPU limits
         private double FallbackGfxClock;
@@ -185,13 +194,93 @@ namespace HandheldCompanion.Managers
             {
                 bool TDPdone = false;
                 bool MSRdone = false;
-                
+
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
+                int algo_choice = 2;
 
-                // Idea, take measurements (10) since last interval, determine which was closest to wanted fps, use that as ratio
+                if (algo_choice == 1)
+                {
+                    
 
-                if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0){
-                    TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
+                    if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
+                    {
+                        TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
+                    }
+                }
+                else if (algo_choice == 2){
+
+
+                    int i;
+                    double ExpectedFPS = 0.0f;
+                    int NodeAmount = 21;
+
+                    //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
+
+                    // Convert xy list to separate single lists
+                    double[] X = new double[NodeAmount];
+                    double[] Y = new double[NodeAmount];
+
+                    for (int idx = 0; idx < NodeAmount; idx++)
+                    {
+                        X[idx] = PerformanceCurve[idx, 0];
+                        Y[idx] = PerformanceCurve[idx, 1];
+                    }
+
+                    //LogManager.LogInformation("X {0} ", X);
+                    //LogManager.LogInformation("Y {0} ", Y);
+
+                    // Check performance curve for current TDP and corresponding expected FPS
+                    // Use actual FPS for current TDP setpoint
+
+                    // Figure out between which two nodes the current TDP setpoint is
+                    i = Array.FindIndex(X, k => TDPSetpoint <= k);
+
+                    // Interpolate between those two points
+                    ExpectedFPS = Y[i - 1] + (TDPSetpoint - X[i - 1]) * (Y[i] - Y[i - 1]) / (X[i] - X[i - 1]);
+
+                    //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
+
+                    // Determine ratio difference between expected FPS and actual
+                    double FPSRatio = HWiNFOManager.process_value_fps /ExpectedFPS;
+
+                    //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
+
+                    // Update whole performance curve FPS values
+                    for (int idx = 0; idx < NodeAmount; idx++)
+                    {
+                        PerformanceCurve[idx,1] = PerformanceCurve[idx,1] * FPSRatio;
+                        Y[idx] = PerformanceCurve[idx, 1];
+                    }
+
+                    //LogManager.LogInformation("Updated curve:");
+                    //LogManager.LogInformation("X {0} ", X);
+                    //LogManager.LogInformation("Y {0} ", Y);
+
+                    // Check performance curve for new TDP required for requested FPS
+                    // cautious of limits, 
+                    //if highest FPS in performance curve is lower then requested FPS, set TDP max
+                    if (Y[NodeAmount - 1] < WantedFPS)
+                    {
+                        TDPSetpoint = 25.0f;
+                    }
+                    //if lowest FPS in performance curve is higher then requested FPS, set TDP min
+                    else if (Y[0] > WantedFPS)
+                    {
+                        TDPSetpoint = 5.0f;
+                    }
+                    else
+                    {
+                        // Figure out between which two nodes the wanted FPS is
+                        i = Array.FindIndex(Y, k => WantedFPS <= k);
+
+                        // Interpolate between those two points
+                        // Todo, swap X and Y here
+                        TDPSetpoint = X[i - 1] + (WantedFPS - Y[i - 1]) * (X[i] - X[i - 1]) / (Y[i] - Y[i - 1]);
+                        //LogManager.LogInformation("For WantedFPS {0:0.0} we have interpolated TDPSetpoint {1:0.000} ", WantedFPS, TDPSetpoint);
+                    }
+
+                    // @ next step idea, add derivate but be careful with kick: https://blog.mbedded.ninja/programming/general/pid-control/
+
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
