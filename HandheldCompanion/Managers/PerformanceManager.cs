@@ -90,9 +90,12 @@ namespace HandheldCompanion.Managers
         private double[] CurrentTDP = new double[5];    // used to store current TDP
         
         
-        private double TDPSetpoint = 10.0;
+        private float TDPSetpoint = 10.0f;
+        private float TDPSetpointInterpolator = 10.0f;
+        private float TDPSetpointDerivative = 0.0f;
+        private float ProcessValuePrevious;
         // Hardcode performance curve of Ghostrunner
-        private double[,] PerformanceCurve = new double[,] {  { 5, 15 },
+        private float[,] PerformanceCurve = new float[,] {  { 5, 15 },
                                                                   { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 },
                                                                   { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 },
                                                                   { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },
@@ -195,7 +198,7 @@ namespace HandheldCompanion.Managers
                 bool TDPdone = false;
                 bool MSRdone = false;
 
-                double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
+                float WantedFPS = (float)SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
                 int algo_choice = 2;
 
                 if (algo_choice == 1)
@@ -204,21 +207,26 @@ namespace HandheldCompanion.Managers
 
                     if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
                     {
-                        TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
+                        TDPSetpoint = (float)(TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps));
                     }
                 }
                 else if (algo_choice == 2){
 
 
                     int i;
-                    double ExpectedFPS = 0.0f;
+                    float ExpectedFPS = 0.0f;
                     int NodeAmount = 21;
+                    float DeltaError = 0.0f;
+                    float ProcessValueNew = 0.0f;
+                    float DTerm = 0.0f;
+                    float DeltaTime = INTERVAL_DEFAULT; // @todo, replace with better measured timer 
+                    float DFactor = 15;
 
                     //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
 
                     // Convert xy list to separate single lists
-                    double[] X = new double[NodeAmount];
-                    double[] Y = new double[NodeAmount];
+                    float[] X = new float[NodeAmount];
+                    float[] Y = new float[NodeAmount];
 
                     for (int idx = 0; idx < NodeAmount; idx++)
                     {
@@ -241,7 +249,7 @@ namespace HandheldCompanion.Managers
                     //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
 
                     // Determine ratio difference between expected FPS and actual
-                    double FPSRatio = HWiNFOManager.process_value_fps /ExpectedFPS;
+                    float FPSRatio = (float)(HWiNFOManager.process_value_fps /ExpectedFPS);
 
                     //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
 
@@ -275,20 +283,42 @@ namespace HandheldCompanion.Managers
 
                         // Interpolate between those two points
                         // Todo, swap X and Y here
-                        TDPSetpoint = X[i - 1] + (WantedFPS - Y[i - 1]) * (X[i] - X[i - 1]) / (Y[i] - Y[i - 1]);
+                        TDPSetpointInterpolator = X[i - 1] + (WantedFPS - Y[i - 1]) * (X[i] - X[i - 1]) / (Y[i] - Y[i - 1]);
                         //LogManager.LogInformation("For WantedFPS {0:0.0} we have interpolated TDPSetpoint {1:0.000} ", WantedFPS, TDPSetpoint);
+
+                        // (PI)D derivate control component to dampen
+                        // @ next step idea, add derivate but be careful with kick: https://blog.mbedded.ninja/programming/general/pid-control/
+                        ProcessValueNew = (float)HWiNFOManager.process_value_fps;
+
+                        // First time around, initialise previous
+                        if (ProcessValuePrevious == float.NaN) { ProcessValuePrevious = ProcessValueNew; }
+
+                        DeltaError = ProcessValueNew - ProcessValuePrevious;
+                        DTerm = DeltaError / DeltaTime;
+                        TDPSetpointDerivative = DFactor * DTerm;
+
+                        //LogManager.LogInformation("Delta error {0:0.000} = ProcessValueNew {1:0.000} - ProcessValuePrev {2:0.000}", DeltaError, ProcessValueNew, ProcessValuePrevious);
+                        //LogManager.LogInformation("D Term {0:0.00000} = DeltaError {1:0.000} / DeltaTime {2:0.000}", DTerm, DeltaError, DeltaTime);
+                        //LogManager.LogInformation("D adds: {0:0.00000}", (DFactor * DTerm));
+
+                        // For next loop
+                        ProcessValuePrevious = ProcessValueNew;
+
+                        // Add derivitate term to setpoint
+                        TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative;
+                        
                     }
 
-                    // @ next step idea, add derivate but be careful with kick: https://blog.mbedded.ninja/programming/general/pid-control/
+                    
 
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
 
                 // Update all stored TDP values
-                StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
+                StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = (double)Math.Clamp(TDPSetpoint,5,25);
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.000};{1:0.000}", StoredTDP[0], WantedFPS);
+                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
