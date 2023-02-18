@@ -90,12 +90,12 @@ namespace HandheldCompanion.Managers
         private double[] CurrentTDP = new double[5];    // used to store current TDP
         
         
-        private float TDPSetpoint = 10.0f;
-        private float TDPSetpointInterpolator = 10.0f;
-        private float TDPSetpointDerivative = 0.0f;
-        private float ProcessValuePrevious;
+        private double TDPSetpoint = 10.0;
+        private double TDPSetpointInterpolator = 10.0f;
+        private double TDPSetpointDerivative = 0.0f;
+        private double ProcessValuePrevious;
         // Hardcode performance curve of Ghostrunner
-        private float[,] PerformanceCurve = new float[,] {  { 5, 15 },
+        private double[,] PerformanceCurve = new double[,] {  { 5, 15 },
                                                                   { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 },
                                                                   { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 },
                                                                   { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },
@@ -198,7 +198,7 @@ namespace HandheldCompanion.Managers
                 bool TDPdone = false;
                 bool MSRdone = false;
 
-                float WantedFPS = (float)SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
+                double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
                 int algo_choice = 2;
 
                 if (algo_choice == 1)
@@ -207,26 +207,26 @@ namespace HandheldCompanion.Managers
 
                     if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
                     {
-                        TDPSetpoint = (float)(TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps));
+                        TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
                     }
                 }
                 else if (algo_choice == 2){
 
 
                     int i;
-                    float ExpectedFPS = 0.0f;
+                    double ExpectedFPS = 0.0f;
                     int NodeAmount = 21;
-                    float DeltaError = 0.0f;
-                    float ProcessValueNew = 0.0f;
-                    float DTerm = 0.0f;
-                    float DeltaTime = INTERVAL_DEFAULT; // @todo, replace with better measured timer 
-                    float DFactor = 15;
+                    double DeltaError = 0.0f;
+                    double ProcessValueNew = 0.0f;
+                    double DTerm = 0.0f;
+                    double DeltaTime = INTERVAL_DEFAULT; // @todo, replace with better measured timer 
+                    double DFactor = 15;
 
                     //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
 
                     // Convert xy list to separate single lists
-                    float[] X = new float[NodeAmount];
-                    float[] Y = new float[NodeAmount];
+                    double[] X = new double[NodeAmount];
+                    double[] Y = new double[NodeAmount];
 
                     for (int idx = 0; idx < NodeAmount; idx++)
                     {
@@ -249,7 +249,7 @@ namespace HandheldCompanion.Managers
                     //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
 
                     // Determine ratio difference between expected FPS and actual
-                    float FPSRatio = (float)(HWiNFOManager.process_value_fps /ExpectedFPS);
+                    double FPSRatio = (HWiNFOManager.process_value_fps /ExpectedFPS);
 
                     //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
 
@@ -282,7 +282,6 @@ namespace HandheldCompanion.Managers
                         i = Array.FindIndex(Y, k => WantedFPS <= k);
 
                         // Interpolate between those two points
-                        // Todo, swap X and Y here
                         TDPSetpointInterpolator = X[i - 1] + (WantedFPS - Y[i - 1]) * (X[i] - X[i - 1]) / (Y[i] - Y[i - 1]);
                         //LogManager.LogInformation("For WantedFPS {0:0.0} we have interpolated TDPSetpoint {1:0.000} ", WantedFPS, TDPSetpoint);
 
@@ -316,7 +315,7 @@ namespace HandheldCompanion.Managers
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
 
                 // Update all stored TDP values
-                StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = (double)Math.Clamp(TDPSetpoint,5,25);
+                StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
                 LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative);
 
