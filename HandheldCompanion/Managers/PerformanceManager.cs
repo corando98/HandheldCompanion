@@ -219,8 +219,10 @@ namespace HandheldCompanion.Managers
                     double DeltaError = 0.0f;
                     double ProcessValueNew = 0.0f;
                     double DTerm = 0.0f;
-                    double DeltaTime = INTERVAL_DEFAULT; // @todo, replace with better measured timer 
-                    double DFactor = 15;
+                    double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
+                    double DFactor = 0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
+                    double DTermEnabled = 1;
+
 
                     //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
 
@@ -249,7 +251,7 @@ namespace HandheldCompanion.Managers
                     //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
 
                     // Determine ratio difference between expected FPS and actual
-                    double FPSRatio = (HWiNFOManager.process_value_fps /ExpectedFPS);
+                    double FPSRatio = (HWiNFOManager.process_value_fps / ExpectedFPS);
 
                     //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
 
@@ -293,7 +295,7 @@ namespace HandheldCompanion.Managers
                         if (ProcessValuePrevious == float.NaN) { ProcessValuePrevious = ProcessValueNew; }
 
                         DeltaError = ProcessValueNew - ProcessValuePrevious;
-                        DTerm = DeltaError / DeltaTime;
+                        DTerm = DeltaError / DeltaTimeSec;
                         TDPSetpointDerivative = DFactor * DTerm;
 
                         //LogManager.LogInformation("Delta error {0:0.000} = ProcessValueNew {1:0.000} - ProcessValuePrev {2:0.000}", DeltaError, ProcessValueNew, ProcessValuePrevious);
@@ -304,7 +306,7 @@ namespace HandheldCompanion.Managers
                         ProcessValuePrevious = ProcessValueNew;
 
                         // Add derivitate term to setpoint
-                        TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative;
+                        TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative * DTermEnabled;
                         
                     }
 

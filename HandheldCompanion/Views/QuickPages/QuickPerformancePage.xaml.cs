@@ -113,10 +113,9 @@ namespace HandheldCompanion.Views.QuickPages
                         break;
                     case "QuickToolsPerformanceAutoTDPFPSValue":
                         {
-                            double TDP = Convert.ToDouble(value);
+                            double AutoTDPFPS = Convert.ToDouble(value);
 
-                            //if (TDPBoostSlider.Minimum <= TDP && TDPBoostSlider.Maximum >= TDP)
-                            //    TDPBoostSlider.Value = TDP;
+                            AutoTDPFPSSlider.Value = AutoTDPFPS;
                         }
                         break;
                     case "QuickToolsPerformanceGPUValue":
