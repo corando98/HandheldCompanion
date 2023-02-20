@@ -1,4 +1,4 @@
-﻿using ControllerCommon;
+using ControllerCommon;
 using ControllerCommon.Processor;
 using HandheldCompanion.Managers;
 using HandheldCompanion.Managers.Desktop;
@@ -266,7 +266,7 @@ namespace HandheldCompanion.Views.QuickPages
         {
             if (AutoTDPToggle.IsOn)
             {
-                SettingsManager.SetProperty("QuickToolsPerformanceAutoTDPFPSValue", AutoTDPFPSSlider.Value);
+                AutoTDPFPSSlider.Value = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
 
                 MainWindow.performanceManager.StartTDPWatchdog();
             }
