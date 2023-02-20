@@ -180,7 +180,7 @@
       <Value Profile="(Default)">False</Value>
     </Setting>
     <Setting Name="QuickToolsPerformanceAutoTDPFPSValue" Type="System.Double" Scope="User">
-      <Value Profile="(Default)">0</Value>
+      <Value Profile="(Default)">40</Value>
     </Setting>
   </Settings>
 </SettingsFile>

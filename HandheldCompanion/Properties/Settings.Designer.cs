@@ -733,7 +733,7 @@ namespace HandheldCompanion.Properties {
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
-        [global::System.Configuration.DefaultSettingValueAttribute("0")]
+        [global::System.Configuration.DefaultSettingValueAttribute("40")]
         public double QuickToolsPerformanceAutoTDPFPSValue {
             get {
                 return ((double)(this["QuickToolsPerformanceAutoTDPFPSValue"]));
