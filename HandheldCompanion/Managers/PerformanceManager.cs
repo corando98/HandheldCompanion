@@ -91,9 +91,12 @@ namespace HandheldCompanion.Managers
         
         
         private double TDPSetpoint = 10.0;
+        double FPSRatio = 1.0;
         private double TDPSetpointInterpolator = 10.0f;
         private double TDPSetpointDerivative = 0.0f;
         private double ProcessValuePrevious;
+        private double WantedFPSPrevious;
+        private double PerformanceCurveError = 0;
         // Hardcode performance curve of Ghostrunner
         private double[,] PerformanceCurve = new double[,] {  { 5, 15 },
                                                                   { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 },
@@ -251,13 +254,30 @@ namespace HandheldCompanion.Managers
                     //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
 
                     // Determine ratio difference between expected FPS and actual
-                    double FPSRatio = (HWiNFOManager.process_value_fps / ExpectedFPS);
+                    FPSRatio = (HWiNFOManager.process_value_fps / ExpectedFPS);
 
                     //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
 
                     // Update whole performance curve FPS values
                     for (int idx = 0; idx < NodeAmount; idx++)
                     {
+                        // @todo, instead of the first interpolation, we could use divide by performance curve error 
+                        // apparantly... huh?!
+                        
+                        PerformanceCurveError = WantedFPSPrevious / HWiNFOManager.process_value_fps;
+
+                        double ScalingDamper = 0.96; // 0.95 too slow
+
+                        if (FPSRatio >= 1)
+                        {
+                            if (ScalingDamper < 1.0) { FPSRatio = ((FPSRatio - 1) * ScalingDamper) + 1; }
+                            if (ScalingDamper >= 1.0) { FPSRatio = ((FPSRatio - 1) / ScalingDamper) + 1; }
+                        }
+                        else {
+                            if (ScalingDamper < 1.0) { FPSRatio = 1 - ((1 - FPSRatio) * ScalingDamper); }
+                            if (ScalingDamper >= 1.0) { FPSRatio = 1 - ((1 - FPSRatio) / ScalingDamper); }
+                        }
+
                         PerformanceCurve[idx,1] = PerformanceCurve[idx,1] * FPSRatio;
                         Y[idx] = PerformanceCurve[idx, 1];
                     }
@@ -307,7 +327,10 @@ namespace HandheldCompanion.Managers
 
                         // Add derivitate term to setpoint
                         TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative * DTermEnabled;
-                        
+
+                        WantedFPSPrevious = WantedFPS;
+
+
                     }
 
                     
@@ -319,7 +342,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative);
+                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
