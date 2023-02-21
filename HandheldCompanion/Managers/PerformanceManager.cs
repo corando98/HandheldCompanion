@@ -104,6 +104,12 @@ namespace HandheldCompanion.Managers
                                                                   { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },
                                                                   { 21, 81 }, { 22, 81 }, { 23, 81 }, { 24, 82 }, { 25, 84 },
                                                                };
+        private int TestRoundCounter = 1;
+        private int TestStepCounter = 0;
+        private double TDPSetpointPrevious = 0;
+        double[] FPSMeasuredRound1 = new double[21];
+        double[] FPSMeasuredRound2 = new double[21];
+        double[] FPSMeasuredRound3 = new double[21];
 
         // GPU limits
         private double FallbackGfxClock;
@@ -202,19 +208,24 @@ namespace HandheldCompanion.Managers
                 bool MSRdone = false;
 
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
-                int algo_choice = 2;
+                int algo_choice = 3;
 
                 if (algo_choice == 1)
                 {
-                    
+
 
                     if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
                     {
                         TDPSetpoint = TDPSetpoint + (TDPSetpoint / HWiNFOManager.process_value_fps) * (WantedFPS - HWiNFOManager.process_value_fps);
                     }
                 }
-                else if (algo_choice == 2){
+                else if (algo_choice == 2)
+                {
 
+                    if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
+                    {
+                        return;
+                    }
 
                     int i;
                     double ExpectedFPS = 0.0f;
@@ -263,7 +274,7 @@ namespace HandheldCompanion.Managers
                     {
                         // @todo, instead of the first interpolation, we could use divide by performance curve error 
                         // apparantly... huh?!
-                        
+
                         PerformanceCurveError = WantedFPSPrevious / HWiNFOManager.process_value_fps;
 
                         double ScalingDamper = 0.96; // 0.95 too slow
@@ -273,12 +284,13 @@ namespace HandheldCompanion.Managers
                             if (ScalingDamper < 1.0) { FPSRatio = ((FPSRatio - 1) * ScalingDamper) + 1; }
                             if (ScalingDamper >= 1.0) { FPSRatio = ((FPSRatio - 1) / ScalingDamper) + 1; }
                         }
-                        else {
+                        else
+                        {
                             if (ScalingDamper < 1.0) { FPSRatio = 1 - ((1 - FPSRatio) * ScalingDamper); }
                             if (ScalingDamper >= 1.0) { FPSRatio = 1 - ((1 - FPSRatio) / ScalingDamper); }
                         }
 
-                        PerformanceCurve[idx,1] = PerformanceCurve[idx,1] * FPSRatio;
+                        PerformanceCurve[idx, 1] = PerformanceCurve[idx, 1] * FPSRatio;
                         Y[idx] = PerformanceCurve[idx, 1];
                     }
 
@@ -333,8 +345,52 @@ namespace HandheldCompanion.Managers
 
                     }
 
-                    
 
+
+                }
+                else if (algo_choice == 3)
+                {
+                    if (HWiNFOManager.process_value_tdp_actual == 0.0 && HWiNFOManager.process_value_fps == 0.0 && HWiNFOManager.process_value_fps == 0.0)
+                    {
+                        return;
+                    }
+
+                    // Step responce function, small step response, print for plotting.
+                    // Least squares fun: https://planetcalc.com/8735/ cubic regression with or without fixed cross points seems most worthwhile
+                    int TDPMax = 25;
+                    int TDPMin = 5;
+
+                    if (TestRoundCounter == 1 && TestStepCounter > 0 && TestStepCounter < 22) { FPSMeasuredRound1[TestStepCounter - 1] = HWiNFOManager.process_value_fps; }
+                    if (TestRoundCounter == 2 && TestStepCounter > 0 && TestStepCounter < 22) { FPSMeasuredRound2[TestStepCounter - 1] = HWiNFOManager.process_value_fps; }
+                    if (TestRoundCounter == 3 && TestStepCounter > 0 && TestStepCounter < 22) { FPSMeasuredRound3[TestStepCounter - 1] = HWiNFOManager.process_value_fps; }
+
+                    if (TestStepCounter == 22) { 
+                        TestRoundCounter += 1;
+                        TestStepCounter = 0;
+
+                        if (TestRoundCounter == 4) 
+                        {    
+                            TestRoundCounter = 1;
+                            // Print results of last 3 tests
+                            // Header
+                            LogManager.LogInformation(",TDP,FPS1,FPS2,FPS3");
+
+                            // Content
+                            for (int idx = 0; idx < 21; idx++)
+                            {
+                                LogManager.LogInformation(",{0:0},{1:0.000},{2:0.000},{3:0.000}", idx + 5, FPSMeasuredRound1[idx], FPSMeasuredRound2[idx], FPSMeasuredRound3[idx]);
+                            }
+
+                        }
+                    }
+
+                    TDPSetpoint = TDPMin + TestStepCounter;
+
+                    LogManager.LogInformation("TDPTester Round: {0:0} Step: {1:0} TDP Setpoint: {2:0.0} Measured FPS (from previous TDP): {3:0.000}", TestRoundCounter, TestStepCounter, TDPSetpoint, HWiNFOManager.process_value_fps);
+
+                    // For next round
+                    TestStepCounter += 1;
+                    TDPSetpointPrevious = TDPSetpoint;
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -342,7 +398,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                //LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -466,12 +522,12 @@ namespace HandheldCompanion.Managers
 
             if (processor is null || !processor.IsInitialized)
                 return;
-
+            /*
             LogManager.LogInformation("TDPControlData;{0:0.000};{1:0.000};{2:0.000};", 
                                       HWiNFOManager.process_value_frametime_ms, 
                                       HWiNFOManager.process_value_fps,
                                       HWiNFOManager.process_value_tdp_actual);
-
+            */
         }
 
 
