@@ -70,9 +70,9 @@ namespace HandheldCompanion.Managers
         protected object sensorLock = new();
         private bool sensorWatchdogPendingStop;
 
-        private const short INTERVAL_DEFAULT = 2000;            // default interval between value scans
+        private const short INTERVAL_DEFAULT = 1000;            // default interval between value scans
         private const short INTERVAL_INTEL = 5000;              // intel interval between value scans
-        private const short INTERVAL_DEGRADED = 2000;          // degraded interval between value scans
+        private const short INTERVAL_DEGRADED = 1000;          // degraded interval between value scans
         private const short INTERVAL_SENSOR = 100;
 
         public event LimitChangedHandler PowerLimitChanged;
