@@ -98,12 +98,9 @@ namespace HandheldCompanion.Managers
         private double WantedFPSPrevious;
         private double PerformanceCurveError = 0;
         // Hardcode performance curve of Ghostrunner
-        private double[,] PerformanceCurve = new double[,] {  { 5, 15 },
-                                                                  { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 },
-                                                                  { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 },
-                                                                  { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },
-                                                                  { 21, 81 }, { 22, 81 }, { 23, 81 }, { 24, 82 }, { 25, 84 },
-                                                               };
+        private double[,] PerformanceCurve = new double[,] {  { 5, 13.766 }, { 6, 15.366 }, { 7, 23.533 }, { 8, 33.4666 }, { 9, 43.5000 }, { 10, 50.43 }, { 11, 53.166 }, { 12, 58.766 }, { 13, 61.566 }, { 14, 64.233 }, { 15, 66.866 }, { 16, 68.10 }, { 17, 69.666 }, { 18, 69.10 }, { 19, 70.166 }, { 20, 70.73 },{ 21, 70.73 }, { 22, 71.033 }, { 23, 71.1000 }, { 24, 71.733 }, { 25, 72.366 } };
+        // Hardcode performance curve of Kena
+        //private double[,] PerformanceCurve = new double[,] {  { 5, 6.033 }, { 6, 7 }, { 7, 10.167 }, { 8, 16.000 }, { 9, 19.100 }, { 10, 21.967 }, { 11, 24.700 }, { 12, 26.933 }, { 13, 28.033 }, { 14, 29.533 }, { 15, 31.000 }, { 16, 31.767 }, { 17, 32.700 }, { 18, 33.267 }, { 19, 33.900 }, { 20, 34.233 },{ 21, 34.767 }, { 22, 35.10 }, { 23, 35.55 }, { 24, 36.000 }, { 25, 36.367 } };
         private int TestRoundCounter = 1;
         private int TestStepCounter = 0;
         private double TDPSetpointPrevious = 0;
@@ -208,7 +205,7 @@ namespace HandheldCompanion.Managers
                 bool MSRdone = false;
 
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
-                int algo_choice = 3;
+                int algo_choice = 2;
 
                 if (algo_choice == 1)
                 {
@@ -222,7 +219,7 @@ namespace HandheldCompanion.Managers
                 else if (algo_choice == 2)
                 {
 
-                    if (HWiNFOManager.process_value_tdp_actual != 0.0 && HWiNFOManager.process_value_fps != 0.0 && HWiNFOManager.process_value_fps != 0.0)
+                    if (HWiNFOManager.process_value_tdp_actual == 0.0 || HWiNFOManager.process_value_fps == 0.0 || HWiNFOManager.process_value_fps == 0.0)
                     {
                         return;
                     }
@@ -235,8 +232,8 @@ namespace HandheldCompanion.Managers
                     double DTerm = 0.0f;
                     double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
                     double DFactor = 0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
-                    double DTermEnabled = 1;
-
+                    double DTermEnabled = 0;
+                    TDPSetpoint = Math.Clamp(TDPSetpoint, 5, 25);
 
                     //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
 
@@ -257,7 +254,13 @@ namespace HandheldCompanion.Managers
                     // Use actual FPS for current TDP setpoint
 
                     // Figure out between which two nodes the current TDP setpoint is
-                    i = Array.FindIndex(X, k => TDPSetpoint <= k);
+                    i = Array.FindIndex(X, k => Math.Clamp(TDPSetpoint, 5, 25) <= k);
+
+                    if (i == -1) 
+                    {
+                        LogManager.LogInformation("Array.FindIndex out of bounds for TDPSetpoint of: {0:000}", TDPSetpoint);
+                        return; 
+                    }
 
                     // Interpolate between those two points
                     ExpectedFPS = Y[i - 1] + (TDPSetpoint - X[i - 1]) * (Y[i] - Y[i - 1]) / (X[i] - X[i - 1]);
@@ -277,7 +280,7 @@ namespace HandheldCompanion.Managers
 
                         PerformanceCurveError = WantedFPSPrevious / HWiNFOManager.process_value_fps;
 
-                        double ScalingDamper = 0.96; // 0.95 too slow
+                        double ScalingDamper = 0.93; // 0.95 too slow 0.96 seems ok
 
                         if (FPSRatio >= 1)
                         {
@@ -398,7 +401,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                //LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -522,12 +525,12 @@ namespace HandheldCompanion.Managers
 
             if (processor is null || !processor.IsInitialized)
                 return;
-            /*
+
             LogManager.LogInformation("TDPControlData;{0:0.000};{1:0.000};{2:0.000};", 
                                       HWiNFOManager.process_value_frametime_ms, 
                                       HWiNFOManager.process_value_fps,
                                       HWiNFOManager.process_value_tdp_actual);
-            */
+
         }
 
 
