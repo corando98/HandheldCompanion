@@ -376,13 +376,27 @@ namespace HandheldCompanion.Managers
                             TestRoundCounter = 1;
                             // Print results of last 3 tests
                             // Header
-                            LogManager.LogInformation(",TDP,FPS1,FPS2,FPS3");
+                            LogManager.LogInformation(",TDP,FPS1,FPS2,FPS3,FPS Average");
 
                             // Content
                             for (int idx = 0; idx < 21; idx++)
                             {
-                                LogManager.LogInformation(",{0:0},{1:0.000},{2:0.000},{3:0.000}", idx + 5, FPSMeasuredRound1[idx], FPSMeasuredRound2[idx], FPSMeasuredRound3[idx]);
+                                LogManager.LogInformation(",{0:0},{1:0.000},{2:0.000},{3:0.000},{4:0.000}", idx + 5, FPSMeasuredRound1[idx], FPSMeasuredRound2[idx], FPSMeasuredRound3[idx], (FPSMeasuredRound1[idx] + FPSMeasuredRound2[idx] + FPSMeasuredRound3[idx]) / 3);
                             }
+
+                            // Hardcoded performance curve output for C#
+                            // Example
+                            // private double[,] PerformanceCurve = new double[,] {  { 5, 15 }, { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 }, { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 }, { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },{ 21, 81 }, { 22, 81 }, { 23, 81 }, { 24, 82 }, { 25, 84 }};
+                            string PerformanceCurveText = "private double[,] PerformanceCurve = new double[,] {";
+                            
+                            for (int idx = 0; idx < 21; idx++)
+                            {
+                                PerformanceCurveText += " { " + idx + 5 + ", " + (FPSMeasuredRound1[idx] + FPSMeasuredRound2[idx] + FPSMeasuredRound3[idx]) / 3 + " },";
+                            }
+
+                            PerformanceCurveText += " };";
+
+                            LogManager.LogInformation(PerformanceCurveText);
 
                         }
                     }
