@@ -9,6 +9,7 @@ using System.Threading;
 using System.Timers;
 using Windows.ApplicationModel.Store;
 using Timer = System.Timers.Timer;
+using static ControllerCommon.Utils.CommonUtils;
 
 namespace HandheldCompanion.Managers
 {
@@ -70,9 +71,9 @@ namespace HandheldCompanion.Managers
         protected object sensorLock = new();
         private bool sensorWatchdogPendingStop;
 
-        private const short INTERVAL_DEFAULT = 1000;            // default interval between value scans
+        private const short INTERVAL_DEFAULT = 1500;            // default interval between value scans
         private const short INTERVAL_INTEL = 5000;              // intel interval between value scans
-        private const short INTERVAL_DEGRADED = 1000;          // degraded interval between value scans
+        private const short INTERVAL_DEGRADED = 1500;          // degraded interval between value scans
         private const short INTERVAL_SENSOR = 100;
 
         public event LimitChangedHandler PowerLimitChanged;
@@ -108,6 +109,9 @@ namespace HandheldCompanion.Managers
         double[] FPSMeasuredRound2 = new double[21];
         double[] FPSMeasuredRound3 = new double[21];
 
+        public OneEuroFilter3D filter = new();
+        double FPSFiltered;
+
         // GPU limits
         private double FallbackGfxClock;
         private double StoredGfxClock;
@@ -130,6 +134,10 @@ namespace HandheldCompanion.Managers
 
             sensorWatchdog = new Timer() { Interval = INTERVAL_SENSOR, AutoReset = true, Enabled = true };
             sensorWatchdog.Elapsed += sensorWatchdog_Elapsed;
+            
+            double MinCutoff = 0.0001; // 0.0001
+            double Beta = 0.008; // 0.008
+            filter.SetFilterAttrs(MinCutoff, Beta);
 
             ProfileManager.Applied += ProfileManager_Applied;
             ProfileManager.Updated += ProfileManager_Updated;
@@ -205,7 +213,7 @@ namespace HandheldCompanion.Managers
                 bool MSRdone = false;
 
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
-                int algo_choice = 2;
+                int algo_choice = 4;
 
                 if (algo_choice == 1)
                 {
@@ -231,8 +239,8 @@ namespace HandheldCompanion.Managers
                     double ProcessValueNew = 0.0f;
                     double DTerm = 0.0f;
                     double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
-                    double DFactor = 0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
-                    double DTermEnabled = 0;
+                    double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
+                    double DTermEnabled = 1;
                     TDPSetpoint = Math.Clamp(TDPSetpoint, 5, 25);
 
                     //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
@@ -410,6 +418,151 @@ namespace HandheldCompanion.Managers
                     TDPSetpointPrevious = TDPSetpoint;
                 }
 
+                else if (algo_choice == 4)
+                {
+
+                    if (HWiNFOManager.process_value_tdp_actual == 0.0 || HWiNFOManager.process_value_fps == 0.0 || HWiNFOManager.process_value_fps == 0.0)
+                    {
+                        return;
+                    }
+
+                    int i;
+                    double ExpectedFPS = 0.0f;
+                    int NodeAmount = 21;
+                    double DeltaError = 0.0f;
+                    double ProcessValueNew = 0.0f;
+                    double PTermEnabled = 1;
+                    double DTerm = 0;
+                    double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
+                    double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
+                    double DTermEnabled = 0;
+
+                    //LogManager.LogInformation("NodeAmount {0} ", NodeAmount);
+
+                    // Convert xy list to separate single lists
+                    double[] X = new double[NodeAmount];
+                    double[] Y = new double[NodeAmount];
+
+                    for (int idx = 0; idx < NodeAmount; idx++)
+                    {
+                        X[idx] = PerformanceCurve[idx, 0];
+                        Y[idx] = PerformanceCurve[idx, 1];
+                    }
+
+                    //LogManager.LogInformation("X {0} ", X);
+                    //LogManager.LogInformation("Y {0} ", Y);
+
+                    // Check performance curve for current TDP and corresponding expected FPS
+                    // Use actual FPS for current TDP setpoint
+
+                    // Figure out between which two nodes the current TDP setpoint is
+                    i = Array.FindIndex(X, k => Math.Clamp(TDPSetpoint, 5, 25) <= k);
+
+                    if (i == -1)
+                    {
+                        LogManager.LogInformation("Array.FindIndex out of bounds for TDPSetpoint of: {0:000}", TDPSetpoint);
+                        return;
+                    }
+
+                    // Interpolate between those two points
+                    ExpectedFPS = Y[i - 1] + (TDPSetpoint - X[i - 1]) * (Y[i] - Y[i - 1]) / (X[i] - X[i - 1]);
+
+                    //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
+
+                    // Determine ratio difference between expected FPS and actual
+                    FPSRatio = (HWiNFOManager.process_value_fps / ExpectedFPS);
+
+                    //LogManager.LogInformation("FPSRatio {0:0.000} = ExpectedFPS {1:0.000} / ActualFPS {2:0.000}", FPSRatio, ExpectedFPS, HWiNFOManager.process_value_fps);
+
+                    // Update whole performance curve FPS values
+                    for (int idx = 0; idx < NodeAmount; idx++)
+                    {
+                        // @todo, instead of the first interpolation, we could use divide by performance curve error based on previous expected FPS
+                        // apparantly... huh?!
+                        PerformanceCurveError = WantedFPSPrevious / FPSFiltered;
+
+                        PerformanceCurve[idx, 1] = PerformanceCurve[idx, 1] * FPSRatio;
+                        Y[idx] = PerformanceCurve[idx, 1];
+                    }
+
+                    //LogManager.LogInformation("Updated curve:");
+                    //LogManager.LogInformation("X {0} ", X);
+                    //LogManager.LogInformation("Y {0} ", Y);
+
+                    // Check performance curve for new TDP required for requested FPS
+                    // cautious of limits, 
+                    //if highest FPS in performance curve is lower then requested FPS, set TDP max
+                    if (Y[NodeAmount - 1] < WantedFPS)
+                    {
+                        TDPSetpoint = 25.0f;
+                    }
+                    //if lowest FPS in performance curve is higher then requested FPS, set TDP min
+                    else if (Y[0] > WantedFPS)
+                    {
+                        TDPSetpoint = 5.0f;
+                    }
+                    else
+                    {
+                        // Figure out between which two nodes the wanted FPS is
+                        i = Array.FindIndex(Y, k => WantedFPS <= k);
+
+                        // Interpolate between those two points
+                        TDPSetpointInterpolator = X[i - 1] + (WantedFPS - Y[i - 1]) * (X[i] - X[i - 1]) / (Y[i] - Y[i - 1]);
+                        //LogManager.LogInformation("For WantedFPS {0:0.0} we have interpolated TDPSetpoint {1:0.000} ", WantedFPS, TDPSetpoint);
+
+                        // Process gain
+                        // https://controlguru.com/process-gain-is-the-how-far-variable/
+                        // Process gain = steady state change in measured process variable delta / steady state change in controller output delta
+
+                        // TDP Delta 20.165 - 12.23 = 7.935
+                        // FPS Delta 49.2 - 40.5 = 8.7
+                        // Process gain = 1,0964 = 8.7 / 7.935
+
+                        // Note, game dependent, todo, automate @@@
+                        // More work then expected, but can use performance curve and use linearaization at specific operating points
+                        double Kp = 1.0964;
+
+                        // Process Time Constant
+                        // https://controlguru.com/process-gain-is-the-how-fast-variable-2/
+                        // 63% of delta PV for 10 FPS change
+                        double ProcessTimeConstantTp = 0.9; // 900 milliseconds
+
+                        // Dead Time
+                        // https://controlguru.com/dead-time-is-the-how-much-delay-variable/
+                        // TDP takes 0.3 seconds after setpoint change
+                        // FPS takes 0.5 seconds after setpoint change
+                        double Thetap = 0.5; // 500 milliseconds
+
+                        // P term
+                        // https://controlguru.com/the-p-only-control-algorithm/
+                        double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
+                        double ControllerError = WantedFPS - (float)HWiNFOManager.process_value_fps; // for now, intentially unfiltered
+                        double PTerm = Kc * ControllerError;
+
+                        // D term, derivate control component
+                        ProcessValueNew = (float)HWiNFOManager.process_value_fps;
+
+                        // First time around, initialise previous
+                        if (ProcessValuePrevious == float.NaN) { ProcessValuePrevious = ProcessValueNew; }
+
+                        DeltaError = ProcessValueNew - ProcessValuePrevious;
+                        DTerm = DeltaError / DeltaTimeSec;
+                        TDPSetpointDerivative = DFactor * DTerm;
+
+                        //LogManager.LogInformation("Delta error {0:0.000} = ProcessValueNew {1:0.000} - ProcessValuePrev {2:0.000}", DeltaError, ProcessValueNew, ProcessValuePrevious);
+                        //LogManager.LogInformation("D Term {0:0.00000} = DeltaError {1:0.000} / DeltaTime {2:0.000}", DTerm, DeltaError, DeltaTime);
+                        //LogManager.LogInformation("D adds: {0:0.00000}", (DFactor * DTerm));
+
+                        // For next loop
+                        ProcessValuePrevious = ProcessValueNew;
+
+
+                        TDPSetpoint = TDPSetpointInterpolator + PTerm * PTermEnabled + TDPSetpointDerivative * DTermEnabled;
+
+                        WantedFPSPrevious = WantedFPS;
+                    }
+                }
+
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
 
                 // Update all stored TDP values
@@ -544,6 +697,9 @@ namespace HandheldCompanion.Managers
                                       HWiNFOManager.process_value_frametime_ms, 
                                       HWiNFOManager.process_value_fps,
                                       HWiNFOManager.process_value_tdp_actual);
+            
+            // @@@ Todo, improve delta time since previous measurement!
+            FPSFiltered = (float)filter.axis1Filter.Filter(HWiNFOManager.process_value_fps, 0.1);
 
         }
 
