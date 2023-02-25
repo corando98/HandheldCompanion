@@ -268,14 +268,14 @@ namespace HandheldCompanion.Views.QuickPages
             {
                 AutoTDPFPSSlider.Value = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
 
-                MainWindow.performanceManager.StartTDPWatchdog();
+                MainWindow.performanceManager.StartAutoTDPWatchdog();
             }
             else
             {
                 // restore default TDP and halt watchdog
                 MainWindow.performanceManager.RequestTDP(MainWindow.handheldDevice.nTDP);
 
-                MainWindow.performanceManager.StopTDPWatchdog();
+                MainWindow.performanceManager.StopAutoTDPWatchdog();
             }
 
             if (!SettingsManager.IsInitialized)
