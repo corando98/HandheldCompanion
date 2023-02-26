@@ -740,6 +740,8 @@ namespace HandheldCompanion.Managers
                         double FPSErrorPercentage = (Math.Abs(FPSSetpoint - FPSActual) / FPSSetpoint) * 100;
                         double FPSErrorPerctentageLimit = 10;
 
+
+                        // @@@ Todo, no need for more attempts if TDP is at max or min and FPS is still not met...
                         if (COBiasAttemptCounter < COBiasAttemptAmount && FPSErrorPercentage > FPSErrorPerctentageLimit)
                         {
                             COBias = DetermineControllerOutputBias(FPSSetpoint,
@@ -750,8 +752,11 @@ namespace HandheldCompanion.Managers
 
                             LogManager.LogInformation("AutoTDP COBios {0:0.000} Attempt {1} of {2}, FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
 
-                            // for a mimimum of 100 to 1000 + 1400 msec + filter delay
-                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 400 + 5000);
+                            // for a mimimum of 100 to 1000 + 1400 msec + filter delay + debug
+
+                            // @@@ Todo, replace interval default with timer time remaining (rounded up)
+                            //https://stackoverflow.com/questions/10699517/how-do-i-check-how-much-time-remains-before-timer-fires-next-event
+                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 100);
                         }
                         else
                         {
@@ -834,6 +839,22 @@ namespace HandheldCompanion.Managers
             // Update whole performance curve FPS values
             for (int idx = 0; idx < NodeAmount; idx++)
             {
+
+                double ScalingDamper = 0.96; // 0.95 too slow 0.96 seems ok
+
+                // @@@ Todo, rework back to simpler variant again? Scaling damper always seems negative thus far
+
+                if (FPSRatio >= 1)
+                {
+                    if (ScalingDamper < 1.0) { FPSRatio = ((FPSRatio - 1) * ScalingDamper) + 1; }
+                    if (ScalingDamper >= 1.0) { FPSRatio = ((FPSRatio - 1) / ScalingDamper) + 1; }
+                }
+                else
+                {
+                    if (ScalingDamper < 1.0) { FPSRatio = 1 - ((1 - FPSRatio) * ScalingDamper); }
+                    if (ScalingDamper >= 1.0) { FPSRatio = 1 - ((1 - FPSRatio) / ScalingDamper); }
+                }
+
                 PerformanceCurve[idx, 1] = PerformanceCurve[idx, 1] * FPSRatio;
                 Y[idx] = PerformanceCurve[idx, 1];
             }
