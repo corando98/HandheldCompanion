@@ -113,7 +113,12 @@ namespace HandheldCompanion.Managers
         double[] FPSMeasuredRound1 = new double[21];
         double[] FPSMeasuredRound2 = new double[21];
         double[] FPSMeasuredRound3 = new double[21];
-        double FPSSetpointPrevious;
+
+        // Auto TDP
+        private short AutoTDPState = 0;
+        private const short AUTO_TDP_STATE_IDLE = 0;
+        private const short AUTO_TDP_STATE_CO_BIAS = 10;
+        private const short AUTO_TDP_STATE_PID_CONTROL = 20;
 
         public OneEuroFilter3D FPSActualFiltered = new();
         public OneEuroFilter3D TDPActualFiltered = new();
@@ -121,7 +126,13 @@ namespace HandheldCompanion.Managers
         double TDPActualFilteredValue;
         double MaxTDP = 25;
         double MinTDP = 5;
-        double COBias = double.NaN;
+        double FPSSetpointPrevious;
+        double COBias = 0;
+        private short COBiasAttemptCounter;
+        private short COBiasAttemptAmount = 3;
+        private short COBiasAttemptTimeoutMilliSec;
+        private short FPSResponseTimeMilliSec = 1300;
+
 
         // GPU limits
         private double FallbackGfxClock;
@@ -507,7 +518,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                //LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -631,6 +642,7 @@ namespace HandheldCompanion.Managers
 
             if (processor is null || !processor.IsInitialized)
                 return;
+
             /*
             LogManager.LogInformation("TDPControlData;{0:0.000};{1:0.000};{2:0.000};", 
                                       HWiNFOManager.process_value_frametime_ms, 
@@ -644,7 +656,6 @@ namespace HandheldCompanion.Managers
 
         private void AutoTDP_Elapsed(object? sender, ElapsedEventArgs e)
         {
-
             if (processor is null || !processor.IsInitialized)
                 return;
 
@@ -670,6 +681,7 @@ namespace HandheldCompanion.Managers
 
                 FPSActualFilteredValue = FPSActualFiltered.axis1Filter.Filter(HWiNFOManager.process_value_fps, 0.1);
                 TDPActualFilteredValue = FPSActualFiltered.axis1Filter.Filter(HWiNFOManager.process_value_tdp_actual, 0.1);
+                double FPSActual = HWiNFOManager.process_value_fps;
 
                 // Update Controller Output Bias only on:
                 // - First run and enough time has passed to get an idea for actual FPS based on earlier TDP actual
@@ -679,23 +691,86 @@ namespace HandheldCompanion.Managers
                 Double FPSSetpoint = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
                 if (FPSSetpointPrevious == Double.NaN) { FPSSetpointPrevious = FPSSetpoint; }
 
-                if (COBias == Double.NaN || FPSSetpoint != FPSSetpointPrevious)
+                // Detect scene change
+                // Scene change percentage for certain duration
+                int PerformanceCurveErrorDuration = 0;
+                if (Math.Abs(PerformanceCurveError - 1) * 100 >= 25 && PerformanceCurveErrorDuration > 3000) 
                 {
 
-                    COBias = DetermineControllerOutputBias(SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue"),
-                                                  HWiNFOManager.process_value_fps,
-                                                  HWiNFOManager.process_value_tdp_actual,
-                                                  PerformanceCurve);
+                }
+                // User request FPS setpoint, use TDP setpoint that was set earlier and for which current FPS should be valid
+                else if (FPSSetpoint != FPSSetpointPrevious)
+                {
+                    AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
+                    LogManager.LogInformation("AutoTDP USer FPS Request;{0:0.0}", FPSSetpoint);
 
-                    StartTDPWatchdog();
-
+                    // Change has been caught, update for next cycles
+                    FPSSetpointPrevious = FPSSetpoint;
                 }
 
+                // Statemachine
+                // - Idle / off
+                // - Performance Curver Tester
+                // - Determine Controller Output Bias
+                // - PID control
+                // Intentionally with seperate if statements so we can perform the next state in the same program cycle
+                if (AutoTDPState == AUTO_TDP_STATE_IDLE)
+                {
+                    AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
+                }
 
+                if (AutoTDPState == AUTO_TDP_STATE_CO_BIAS) 
+                {
+                    // Prevent underflow
+                    if (COBiasAttemptTimeoutMilliSec < 0){ COBiasAttemptTimeoutMilliSec = 0; }
 
-                FPSSetpointPrevious = FPSSetpoint;
+                    // Once COBias has been set, wait untill FPS responce 
+                    if (COBiasAttemptTimeoutMilliSec == 0)
+                    {
 
-                LogManager.LogInformation("AutoTDPData;{0:0.000};{1:0.000};{2:0.000};", HWiNFOManager.process_value_fps, HWiNFOManager.process_value_tdp_actual, COBias);
+                        // @@@ Todo, improve, by initially waiting for a bit or having filtered value sensor running earlier?
+                        if (COBias == 0.0)
+                        {
+                            COBias = TDPSetpoint = TDPActualFilteredValue;
+                            LogManager.LogInformation("AutoTDP First time, TDPSet = TDPActualFiltered {0:0.000}", TDPActualFilteredValue);
+                        }
+
+                        // Check if FPS is within target, if not try again
+                        // If max attempts has been reached, then move on to PID control.
+                        double FPSErrorPercentage = (Math.Abs(FPSSetpoint - FPSActual) / FPSSetpoint) * 100;
+                        double FPSErrorPerctentageLimit = 10;
+
+                        if (COBiasAttemptCounter < COBiasAttemptAmount && FPSErrorPercentage > FPSErrorPerctentageLimit)
+                        {
+                            COBias = DetermineControllerOutputBias(FPSSetpoint,
+                                                                   FPSActual,
+                                                                   TDPSetpoint);
+
+                            COBiasAttemptCounter += 1;
+
+                            LogManager.LogInformation("AutoTDP COBios {0:0.000} Attempt {1} of {2}, FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
+
+                            // for a mimimum of 100 to 1000 + 1400 msec + filter delay
+                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 400 + 5000);
+                        }
+                        else
+                        {
+                            LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
+                            COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
+                            AutoTDPState = AUTO_TDP_STATE_PID_CONTROL;
+                        }                        
+
+                        StartTDPWatchdog();
+
+                    }
+
+                    COBiasAttemptTimeoutMilliSec -= INTERVAL_AUTO_TDP;
+                }
+
+                if (AutoTDPState == AUTO_TDP_STATE_PID_CONTROL) { 
+                }
+
+                //  LogManager.LogInformation("AutoTDPData;{0:0.000};{1:0.000};{2:0.000};", HWiNFOManager.process_value_fps, HWiNFOManager.process_value_tdp_actual, COBias);
 
                 // user requested to halt auto TDP, stop watchdogs
                 if (AutoTDPWatchdogPendingStop)
@@ -703,6 +778,7 @@ namespace HandheldCompanion.Managers
                     AutoTDPWatchdog.Stop();
                     cpuWatchdogPendingStop = true;
                     AutoTDPWatchdogPendingStop = false;
+                    AutoTDPState = AUTO_TDP_STATE_IDLE;
                 }
 
                 Monitor.Exit(AutoTDPLock);
@@ -710,8 +786,9 @@ namespace HandheldCompanion.Managers
 
         }
 
-        private double DetermineControllerOutputBias(double WantedFPS, double ActualFPS, double TDPEarlierSetOrActual, double[,] PerformanceCurve)
+        private double DetermineControllerOutputBias(double WantedFPS, double ActualFPS, double TDPEarlierSetOrActual)
         {
+            // @@@ todo, adjust performance curve differently then a global?
 
             double ControllerOutputBias = 0.0;
             double ExpectedFPS = 0.0;
