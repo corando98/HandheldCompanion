@@ -104,7 +104,7 @@ namespace HandheldCompanion.Managers
         private double WantedFPSPrevious;
         private double PerformanceCurveError = 0;
         // Hardcode performance curve of Ghostrunner
-        private double[,] PerformanceCurve = new double[,] {  { 5, 13.766 }, { 6, 15.366 }, { 7, 23.533 }, { 8, 33.4666 }, { 9, 43.5000 }, { 10, 50.43 }, { 11, 53.166 }, { 12, 58.766 }, { 13, 61.566 }, { 14, 64.233 }, { 15, 66.866 }, { 16, 68.10 }, { 17, 69.666 }, { 18, 69.10 }, { 19, 70.166 }, { 20, 70.73 },{ 21, 70.73 }, { 22, 71.033 }, { 23, 71.1000 }, { 24, 71.733 }, { 25, 72.366 } };
+        private double[,] PerformanceCurve = new double[,] {  { 5, 13.766, 0 }, { 6, 15.366, 0 }, { 7, 23.533, 0 }, { 8, 33.4666, 0 }, { 9, 43.5000, 0 }, { 10, 50.43, 0 }, { 11, 53.166, 0 }, { 12, 58.766, 0 }, { 13, 61.566, 0 }, { 14, 64.233, 0 }, { 15, 66.866, 0 }, { 16, 68.10, 0 }, { 17, 69.666, 0 }, { 18, 69.10, 0 }, { 19, 70.166, 0 }, { 20, 70.73, 0 },{ 21, 70.73, 0 }, { 22, 71.033, 0 }, { 23, 71.1000, 0 }, { 24, 71.733, 0 }, { 25, 72.366, 0 } };
         // Hardcode performance curve of Kena
         //private double[,] PerformanceCurve = new double[,] {  { 5, 6.033 }, { 6, 7 }, { 7, 10.167 }, { 8, 16.000 }, { 9, 19.100 }, { 10, 21.967 }, { 11, 24.700 }, { 12, 26.933 }, { 13, 28.033 }, { 14, 29.533 }, { 15, 31.000 }, { 16, 31.767 }, { 17, 32.700 }, { 18, 33.267 }, { 19, 33.900 }, { 20, 34.233 },{ 21, 34.767 }, { 22, 35.10 }, { 23, 35.55 }, { 24, 36.000 }, { 25, 36.367 } };
         private int TestRoundCounter = 1;
@@ -132,7 +132,7 @@ namespace HandheldCompanion.Managers
         private short COBiasAttemptAmount = 3;
         private short COBiasAttemptTimeoutMilliSec;
         private short FPSResponseTimeMilliSec = 1300;
-
+        private double PTermEnabled = 1;
 
         // GPU limits
         private double FallbackGfxClock;
@@ -160,12 +160,12 @@ namespace HandheldCompanion.Managers
             AutoTDPWatchdog = new Timer() { Interval = INTERVAL_AUTO_TDP, AutoReset = true, Enabled = false };
             AutoTDPWatchdog.Elapsed += AutoTDP_Elapsed;
 
-            double FPSActualFilterMinCutoff = 0.01;
-            double FPSActualFilterBeta = 0.05;
+            double FPSActualFilterMinCutoff = 0.15;
+            double FPSActualFilterBeta = 0.1;
             FPSActualFiltered.SetFilterAttrs(FPSActualFilterMinCutoff, FPSActualFilterBeta);
 
-            double TDPActualFilterMinCutoff = 0.01; 
-            double TDPActualFilterBeta = 0.08; 
+            double TDPActualFilterMinCutoff = 0.25; 
+            double TDPActualFilterBeta = 0.2; 
             TDPActualFiltered.SetFilterAttrs(TDPActualFilterMinCutoff, TDPActualFilterBeta);
 
             ProfileManager.Applied += ProfileManager_Applied;
@@ -457,23 +457,27 @@ namespace HandheldCompanion.Managers
 
                     double DeltaError = 0.0f;
                     double ProcessValueNew = 0.0f;
-                    double PTermEnabled = 0;
                     double DTerm = 0;
                     double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
                     double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
                     double DTermEnabled = 0;
+                    double COBiasUnused;
+
+                    // @@@ Todo, use 1300 msec older tdp setpoint
+                    // @@@ todo, use filtered FPS actual
+                    // Update performance curve for current scene
+                    COBiasUnused = DetermineControllerOutputBias(WantedFPS,
+                                                                 HWiNFOManager.process_value_fps,
+                                                                 TDPSetpoint);
 
                     // Process gain
                     // https://controlguru.com/process-gain-is-the-how-far-variable/
-                    // Process gain = steady state change in measured process variable delta / steady state change in controller output delta
 
-                    // TDP Delta 20.165 - 12.23 = 7.935
-                    // FPS Delta 49.2 - 40.5 = 8.7
-                    // Process gain = 1,0964 = 8.7 / 7.935
+                    // Update process gain for current performance curve
+                    PerformanceCurve = DeterminePerformanceCurveControllerProcessGains(PerformanceCurve);
 
-                    // Note, game dependent, todo, automate @@@
-                    // More work then expected, but can use performance curve and use linearaization at specific operating points
-                    double Kp = 1.0964;
+                    // Determine process gain for current FPS through interpolation
+                    double Kp = 1.0 * DetermineControllerProcessGain(PerformanceCurve, HWiNFOManager.process_value_fps);
 
                     // Process Time Constant
                     // https://controlguru.com/process-gain-is-the-how-fast-variable-2/
@@ -489,8 +493,10 @@ namespace HandheldCompanion.Managers
                     // P term
                     // https://controlguru.com/the-p-only-control-algorithm/
                     double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
-                    double ControllerError = WantedFPS - (float)HWiNFOManager.process_value_fps; // for now, intentially unfiltered
-                    double PTerm = Kc * ControllerError;
+                    double ControllerError = WantedFPS - HWiNFOManager.process_value_fps; // for now, intentially unfiltered
+                    double PTerm = Math.Clamp(Kc * ControllerError,-10,10);
+
+                    LogManager.LogInformation("Process Gain: {0:0.000} Kc: {1:0.000} PTerm: {2:0.000} Enabled: {3:0} FPS: {4:0.00}", Kp, Kc, PTerm, PTermEnabled, HWiNFOManager.process_value_fps);
 
                     // D term, derivate control component
                     ProcessValueNew = (float)HWiNFOManager.process_value_fps;
@@ -510,7 +516,7 @@ namespace HandheldCompanion.Managers
                     ProcessValuePrevious = ProcessValueNew;
 
                     TDPSetpoint = COBias + PTerm * PTermEnabled + TDPSetpointDerivative * DTermEnabled;
-                    
+                    COBias = TDPSetpoint;
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -681,7 +687,7 @@ namespace HandheldCompanion.Managers
 
                 FPSActualFilteredValue = FPSActualFiltered.axis1Filter.Filter(HWiNFOManager.process_value_fps, 0.1);
                 TDPActualFilteredValue = FPSActualFiltered.axis1Filter.Filter(HWiNFOManager.process_value_tdp_actual, 0.1);
-                double FPSActual = HWiNFOManager.process_value_fps;
+                double FPSActual = FPSActualFilteredValue; //HWiNFOManager.process_value_fps;
 
                 // Update Controller Output Bias only on:
                 // - First run and enough time has passed to get an idea for actual FPS based on earlier TDP actual
@@ -717,10 +723,13 @@ namespace HandheldCompanion.Managers
                 if (AutoTDPState == AUTO_TDP_STATE_IDLE)
                 {
                     AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
+                    PTermEnabled = 0;
                 }
 
                 if (AutoTDPState == AUTO_TDP_STATE_CO_BIAS) 
                 {
+                    PTermEnabled = 0;
+
                     // Prevent underflow
                     if (COBiasAttemptTimeoutMilliSec < 0){ COBiasAttemptTimeoutMilliSec = 0; }
 
@@ -729,6 +738,7 @@ namespace HandheldCompanion.Managers
                     {
 
                         // @@@ Todo, improve, by initially waiting for a bit or having filtered value sensor running earlier?
+                        // @@@ Todo, wait a bit in case TDP set is also still running
                         if (COBias == 0.0)
                         {
                             COBias = TDPSetpoint = TDPActualFilteredValue;
@@ -738,10 +748,11 @@ namespace HandheldCompanion.Managers
                         // Check if FPS is within target, if not try again
                         // If max attempts has been reached, then move on to PID control.
                         double FPSErrorPercentage = (Math.Abs(FPSSetpoint - FPSActual) / FPSSetpoint) * 100;
-                        double FPSErrorPerctentageLimit = 10;
+                        double FPSErrorPerctentageLimit = 5;
 
 
                         // @@@ Todo, no need for more attempts if TDP is at max or min and FPS is still not met...
+                        // @@@ Todo, really need to use older FPS setpoint here in case PID controller is running
                         if (COBiasAttemptCounter < COBiasAttemptAmount && FPSErrorPercentage > FPSErrorPerctentageLimit)
                         {
                             COBias = DetermineControllerOutputBias(FPSSetpoint,
@@ -756,12 +767,14 @@ namespace HandheldCompanion.Managers
 
                             // @@@ Todo, replace interval default with timer time remaining (rounded up)
                             //https://stackoverflow.com/questions/10699517/how-do-i-check-how-much-time-remains-before-timer-fires-next-event
-                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 100);
+                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 300 + 100);
                         }
                         else
                         {
                             LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
                             COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
+                            PTermEnabled = 1;
+
                             AutoTDPState = AUTO_TDP_STATE_PID_CONTROL;
                         }                        
 
@@ -827,6 +840,7 @@ namespace HandheldCompanion.Managers
             }
 
             // Interpolate between those two points
+            TDPEarlierSetOrActual = Math.Clamp(TDPEarlierSetOrActual, MinTDP, MaxTDP);
             ExpectedFPS = Y[i - 1] + (TDPEarlierSetOrActual - X[i - 1]) * (Y[i] - Y[i - 1]) / (X[i] - X[i - 1]);
 
             //LogManager.LogInformation("For TDPSetpoint {0:0.000} we have ExpectedFPS {1:0.000} ", TDPSetpoint, ExpectedFPS);
@@ -887,6 +901,135 @@ namespace HandheldCompanion.Managers
             }
 
             return Math.Clamp(ControllerOutputBias, MinTDP, MaxTDP);
+        }
+
+        private double[,] DeterminePerformanceCurveControllerProcessGains(double[,] PerformanceCurve)
+        {
+            // Process gain
+            // https://controlguru.com/process-gain-is-the-how-far-variable/
+            // Process gain = steady state change in measured process variable delta / steady state change in controller output delta
+
+            // Example
+            // FPS Delta 49.2 - 40.5 = 8.7
+            // TDP Delta 20.165 - 12.23 = 7.935
+            // Process gain = 1,0964 = 8.7 / 7.935
+
+            // Note, game dependent, scene dependent (probably)
+
+            double TDPDelta;
+            double FPSDelta;
+            double ProcessGain;
+
+            // @@@ Todo, could possible combine some stuff into functions
+            // Determine process gain for each point in curve
+            int NodeAmount = 21;
+            for (int idx = 0; idx < NodeAmount; idx++)
+            {
+                // In case of in between nodes, determine avarage
+                if (idx != 0 && idx != NodeAmount - 1)
+                {
+                    // From previous node
+                    TDPDelta = PerformanceCurve[idx, 0] - PerformanceCurve[idx - 1, 0];
+                    FPSDelta = PerformanceCurve[idx, 1] - PerformanceCurve[idx - 1, 1];
+
+                    // @@@ Todo, process gain should always be postive, but not all performance curves are perfect...
+                    ProcessGain = Math.Abs(FPSDelta / TDPDelta);
+
+                    // To next node
+                    TDPDelta = PerformanceCurve[idx + 1, 0] - PerformanceCurve[idx, 0];
+                    FPSDelta = PerformanceCurve[idx + 1, 1] - PerformanceCurve[idx, 1];
+
+                    double ProcessGain2;
+                    // @@@ Todo, process gain should always be postive, but not all performance curves are perfect...
+                    ProcessGain2 = Math.Abs(FPSDelta / TDPDelta);
+
+                    // Average
+                    PerformanceCurve[idx, 2] = (ProcessGain + ProcessGain2) / 2;
+
+                }
+                // In case of first node, use next point only
+                else if (idx == 0) 
+                {
+                    TDPDelta = PerformanceCurve[idx + 1, 0] - PerformanceCurve[idx, 0];
+                    FPSDelta = PerformanceCurve[idx + 1, 1] - PerformanceCurve[idx, 1];
+
+                    // @@@ Todo, process gain should always be postive, but not all performance curves are perfect...
+                    ProcessGain = Math.Abs(FPSDelta / TDPDelta);
+
+                    PerformanceCurve[idx, 2] = ProcessGain;
+                }
+                // In case of last node, use previous point only
+                else if (idx == NodeAmount - 1)
+                {
+                    TDPDelta = PerformanceCurve[idx, 0] - PerformanceCurve[idx - 1, 0];
+                    FPSDelta = PerformanceCurve[idx, 1] - PerformanceCurve[idx - 1, 1];
+
+                    // @@@ Todo, process gain should always be postive, but not all performance curves are perfect...
+                    ProcessGain = Math.Abs(FPSDelta / TDPDelta);
+
+                    PerformanceCurve[idx, 2] = ProcessGain;
+                }
+            }
+
+            // Debug output, performance curve
+            if (false)
+            {
+                // Header
+                LogManager.LogInformation(",TDP,FPS,ProcessGain");
+
+                // Content
+                for (int idx = 0; idx < NodeAmount; idx++)
+                {
+                    LogManager.LogInformation(",{0:0.000},{1:0.000},{2:0.000}", PerformanceCurve[idx, 0], PerformanceCurve[idx, 1], PerformanceCurve[idx, 2]);
+                }
+            }
+
+            return PerformanceCurve;
+
+        }
+
+        private double DetermineControllerProcessGain(double[,] PerformanceCurve, double FPSCurrent)
+        {
+            double ProcessGainKp;
+
+            // Linear interpolation
+            // @@@ Todo, we seem to be doing this linear interpolation quite often in the same way... uhhh
+
+            // Convert FPS and ProcessGains to separate single lists
+            int NodeAmount = 21;
+
+            double[] X = new double[NodeAmount];
+            double[] Y = new double[NodeAmount];
+
+            for (int idx = 0; idx < NodeAmount; idx++)
+            {
+                X[idx] = PerformanceCurve[idx, 1]; // FPS on X axis
+                Y[idx] = PerformanceCurve[idx, 2]; // Process gain on Y axis
+            }
+
+            // If current FPS is higher then highest performance curve FPS value, return max process gain
+            if (X[NodeAmount - 1] < FPSCurrent)
+            {
+                ProcessGainKp = Y[NodeAmount - 1];
+            }
+            // If current FPS is lower then lowest performance curve FPS value, return lowest process gain
+            else if (X[0] > FPSCurrent)
+            {
+                ProcessGainKp = Y[0];
+            }
+            else
+            {
+                int i;
+
+                // Figure out between which two nodes the current FPS is
+                i = Array.FindIndex(X, k => FPSCurrent <= k);
+
+                // Interpolate between those two points
+                ProcessGainKp = Y[i - 1] + (FPSCurrent - X[i - 1]) * (Y[i] - Y[i - 1]) / (X[i] - X[i - 1]);
+            }
+
+            // @@@ Todo, process gain should always be postive, but not all performance curves are perfect...
+            return Math.Abs(ProcessGainKp);
         }
 
         internal void StartGPUWatchdog()
