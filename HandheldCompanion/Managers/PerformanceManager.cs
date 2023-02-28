@@ -1,9 +1,10 @@
-using ControllerCommon;
+﻿using ControllerCommon;
 using ControllerCommon.Managers;
 using ControllerCommon.Processor;
 using ControllerCommon.Utils;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Timers;
@@ -133,6 +134,12 @@ namespace HandheldCompanion.Managers
         private short COBiasAttemptTimeoutMilliSec;
         private short FPSResponseTimeMilliSec = 1300;
         private double PTermEnabled = 1;
+        private double ITermEnabled = 1;
+        private double ITerm = 0;
+        public static Stopwatch stopwatch;
+        public static double TotalMilliseconds;
+        public static double UpdateTimePreviousMilliseconds;
+        public static double DeltaMilliSeconds = -100;
 
         // GPU limits
         private double FallbackGfxClock;
@@ -167,6 +174,9 @@ namespace HandheldCompanion.Managers
             double TDPActualFilterMinCutoff = 0.25; 
             double TDPActualFilterBeta = 0.2; 
             TDPActualFiltered.SetFilterAttrs(TDPActualFilterMinCutoff, TDPActualFilterBeta);
+
+            // initialize stopwatch
+            stopwatch = new Stopwatch();
 
             ProfileManager.Applied += ProfileManager_Applied;
             ProfileManager.Updated += ProfileManager_Updated;
@@ -463,6 +473,11 @@ namespace HandheldCompanion.Managers
                     double DTermEnabled = 0;
                     double COBiasUnused;
 
+                    // Update timestamp
+                    TotalMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                    DeltaMilliSeconds = (TotalMilliseconds - UpdateTimePreviousMilliseconds);
+                    UpdateTimePreviousMilliseconds = TotalMilliseconds;
+
                     // @@@ Todo, use 1300 msec older tdp setpoint
                     // @@@ todo, use filtered FPS actual
                     // Update performance curve for current scene
@@ -477,7 +492,7 @@ namespace HandheldCompanion.Managers
                     PerformanceCurve = DeterminePerformanceCurveControllerProcessGains(PerformanceCurve);
 
                     // Determine process gain for current FPS through interpolation
-                    double Kp = 1.0 * DetermineControllerProcessGain(PerformanceCurve, HWiNFOManager.process_value_fps);
+                    double ProcessGainKp = 1.0 * DetermineControllerProcessGain(PerformanceCurve, HWiNFOManager.process_value_fps);
 
                     // Process Time Constant
                     // https://controlguru.com/process-gain-is-the-how-fast-variable-2/
@@ -488,15 +503,54 @@ namespace HandheldCompanion.Managers
                     // https://controlguru.com/dead-time-is-the-how-much-delay-variable/
                     // TDP takes 0.3 seconds after setpoint change
                     // FPS takes 0.5 seconds after setpoint change
-                    double Thetap = 0.5; // 500 milliseconds
+                    double DeadTimeThetap = 0.5; // 500 milliseconds
 
-                    // P term
-                    // https://controlguru.com/the-p-only-control-algorithm/
-                    double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
                     double ControllerError = WantedFPS - HWiNFOManager.process_value_fps; // for now, intentially unfiltered
-                    double PTerm = Math.Clamp(Kc * ControllerError,-10,10);
 
-                    //LogManager.LogInformation("Process Gain: {0:0.000} Kc: {1:0.000} PTerm: {2:0.000} Enabled: {3:0} FPS: {4:0.00}", Kp, Kc, PTerm, PTermEnabled, HWiNFOManager.process_value_fps);
+                    // Closed Loop Time Constant
+                    // https://controlguru.com/pi-control-of-the-heat-exchanger/
+                    double ClosedLoopTimeConstantTc = 0.0;
+
+                    // Conservative
+                    // Tc is the larger of  10·Tp or 80·Өp
+                    ClosedLoopTimeConstantTc = Math.Max(10 * ProcessTimeConstantTp, 80 * DeadTimeThetap);
+
+                    // Aggressive
+                    // Tc is the larger of 0.1·Tp or 0.8·Өp
+                    // Tested, goes unstable, fast.
+                    ClosedLoopTimeConstantTc = Math.Max(0.1 * ProcessTimeConstantTp, 0.8 * DeadTimeThetap);
+
+                    // Moderate
+                    // Tc is the larger of 1·Tp or 8·Өp
+                    ClosedLoopTimeConstantTc = Math.Max(1 * ProcessTimeConstantTp, 8 * DeadTimeThetap);
+
+
+                    // Controller Gain Kc
+                    double ControllerGainKc = (1 / ProcessGainKp) * (ProcessTimeConstantTp / (DeadTimeThetap + ClosedLoopTimeConstantTc));
+                    // P Only cntroller, double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
+
+                    //LogManager.LogInformation("Process Gain: {0:0.000} ControllerGainKc: {1:0.000} ClosedLoopTimeConstantTc: {2:0.000}", ProcessGainKp, ControllerGainKc, ClosedLoopTimeConstantTc);
+
+                    // PI Controller
+                    // https://controlguru.com/integral-action-and-pi-control/
+
+                    // P term, proportional control component
+                    // Restrict to -/+ 10 Watt TDP
+                    double PTerm = Math.Clamp(ControllerGainKc * ControllerError,-10,10);
+
+                    //LogManager.LogInformation("P Term: {0:0.000} Enabled: {1:0}", PTerm, PTermEnabled);
+
+                    // I term, integral control component
+                    // Reset Time Ti, Notice that reset time, Ti, is always set equal to
+                    // the time constant of the process, regardless of desired controller activity.
+                    double ResetTimeTi = ClosedLoopTimeConstantTc;
+                    // I = I + Ki*e*(t - t_prev)
+                    double Ki = ControllerGainKc / ResetTimeTi;
+                    ITerm = ITerm + Ki * ControllerError * (DeltaMilliSeconds / 1000);
+                    ITerm = Math.Clamp(ITerm, -10, 10);
+                    if (ITermEnabled == 0) { ITerm = 0; }
+
+                    //LogManager.LogInformation("I Term: {0:0.000} Enabled: {1:0}", ITerm, ITermEnabled);
 
                     // D term, derivate control component
                     ProcessValueNew = (float)HWiNFOManager.process_value_fps;
@@ -515,8 +569,7 @@ namespace HandheldCompanion.Managers
                     // For next loop
                     ProcessValuePrevious = ProcessValueNew;
 
-                    TDPSetpoint = COBias + PTerm * PTermEnabled + TDPSetpointDerivative * DTermEnabled;
-                    COBias = TDPSetpoint;
+                    TDPSetpoint = COBias + PTerm * PTermEnabled + ITerm * ITermEnabled + TDPSetpointDerivative * DTermEnabled;
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -724,11 +777,13 @@ namespace HandheldCompanion.Managers
                 {
                     AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
                     PTermEnabled = 0;
+                    ITermEnabled = 0;
                 }
 
                 if (AutoTDPState == AUTO_TDP_STATE_CO_BIAS) 
                 {
                     PTermEnabled = 0;
+                    ITermEnabled = 0;
 
                     // Prevent underflow
                     if (COBiasAttemptTimeoutMilliSec < 0){ COBiasAttemptTimeoutMilliSec = 0; }
@@ -774,11 +829,13 @@ namespace HandheldCompanion.Managers
                             //LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
                             COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
                             PTermEnabled = 1;
+                            ITermEnabled = 1;
 
                             AutoTDPState = AUTO_TDP_STATE_PID_CONTROL;
                         }                        
 
                         StartTDPWatchdog();
+                        stopwatch.Start();
 
                     }
 
@@ -794,6 +851,7 @@ namespace HandheldCompanion.Managers
                 if (AutoTDPWatchdogPendingStop)
                 {
                     AutoTDPWatchdog.Stop();
+                    stopwatch.Start();
                     cpuWatchdogPendingStop = true;
                     AutoTDPWatchdogPendingStop = false;
                     AutoTDPState = AUTO_TDP_STATE_IDLE;
@@ -811,6 +869,7 @@ namespace HandheldCompanion.Managers
             double ControllerOutputBias = 0.0;
             double ExpectedFPS = 0.0;
             TDPEarlierSetOrActual = Math.Clamp(TDPEarlierSetOrActual, MinTDP, MaxTDP); // prevent out of bounds noise
+            ActualFPS = Math.Clamp(ActualFPS, 5, 600); // Prevent using exterme FPS values.
             int i;
 
             // @@@ Todo, determine node amount
@@ -833,7 +892,7 @@ namespace HandheldCompanion.Managers
             // Figure out between which two nodes the current TDP setpoint or actual is
             i = Array.FindIndex(X, k => TDPEarlierSetOrActual <= k);
 
-            if (i == -1)
+            if (i < 0 || i > NodeAmount)
             {
                 LogManager.LogInformation("Array.FindIndex out of bounds for TDP Setpoint or actual of: {0:000}", TDPEarlierSetOrActual);
                 return Math.Clamp(ControllerOutputBias, MinTDP, MaxTDP);
