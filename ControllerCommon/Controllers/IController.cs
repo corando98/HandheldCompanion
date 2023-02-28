@@ -190,7 +190,7 @@ namespace ControllerCommon.Controllers
             else if (IsKeyUp)
                 InjectedButtons &= ~button;
 
-            LogManager.LogDebug("Injecting {0} (IsKeyDown:{1}) (IsKeyUp:{2}) to {3}", button, IsKeyDown, IsKeyUp, ToString());
+            //LogManager.LogDebug("Injecting {0} (IsKeyDown:{1}) (IsKeyUp:{2}) to {3}", button, IsKeyDown, IsKeyUp, ToString());
         }
 
         public virtual void SetVibrationStrength(double value)

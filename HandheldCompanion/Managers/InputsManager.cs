@@ -155,7 +155,7 @@ namespace HandheldCompanion.Managers
 
                 if (keys.Count != 0)
                 {
-                    LogManager.LogDebug("Captured: Buttons: {0}, Type: {1}, IsKeyDown: {2}", currentChord.GamepadButtons, currentChord.InputsType, IsKeyDown);
+                    //LogManager.LogDebug("Captured: Buttons: {0}, Type: {1}, IsKeyDown: {2}", currentChord.GamepadButtons, currentChord.InputsType, IsKeyDown);
 
                     foreach (string key in keys)
                     {
@@ -202,7 +202,7 @@ namespace HandheldCompanion.Managers
                         return;
 
                     List<KeyCode> chords = chord.chords[IsKeyDown];
-                    LogManager.LogDebug("Released: KeyCodes: {0}, IsKeyDown: {1}", string.Join(',', chords), IsKeyDown);
+                    //LogManager.LogDebug("Released: KeyCodes: {0}, IsKeyDown: {1}", string.Join(',', chords), IsKeyDown);
 
                     if (IsKeyDown)
                         SendChordDown(chords);

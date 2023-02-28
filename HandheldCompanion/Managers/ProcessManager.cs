@@ -245,7 +245,7 @@ namespace HandheldCompanion.Managers
 
                 ForegroundChanged?.Invoke(foregroundProcess, backgroundProcess);
 
-                LogManager.LogDebug("{0} executable {1} now has the foreground", foregroundProcess.Platform, foregroundProcess.Name);
+                //LogManager.LogDebug("{0} executable {1} now has the foreground", foregroundProcess.Platform, foregroundProcess.Name);
             }
             catch
             {
