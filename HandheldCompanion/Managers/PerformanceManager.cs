@@ -496,7 +496,7 @@ namespace HandheldCompanion.Managers
                     double ControllerError = WantedFPS - HWiNFOManager.process_value_fps; // for now, intentially unfiltered
                     double PTerm = Math.Clamp(Kc * ControllerError,-10,10);
 
-                    LogManager.LogInformation("Process Gain: {0:0.000} Kc: {1:0.000} PTerm: {2:0.000} Enabled: {3:0} FPS: {4:0.00}", Kp, Kc, PTerm, PTermEnabled, HWiNFOManager.process_value_fps);
+                    //LogManager.LogInformation("Process Gain: {0:0.000} Kc: {1:0.000} PTerm: {2:0.000} Enabled: {3:0} FPS: {4:0.00}", Kp, Kc, PTerm, PTermEnabled, HWiNFOManager.process_value_fps);
 
                     // D term, derivate control component
                     ProcessValueNew = (float)HWiNFOManager.process_value_fps;
@@ -524,7 +524,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                //LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -649,13 +649,13 @@ namespace HandheldCompanion.Managers
             if (processor is null || !processor.IsInitialized)
                 return;
 
-            /*
+            
             LogManager.LogInformation("TDPControlData;{0:0.000};{1:0.000};{2:0.000};", 
                                       HWiNFOManager.process_value_frametime_ms, 
                                       HWiNFOManager.process_value_fps,
                                       HWiNFOManager.process_value_tdp_actual);
             
-            */
+            
             // @@@ Todo, improve delta time since previous measurement!
 
         }
@@ -761,7 +761,7 @@ namespace HandheldCompanion.Managers
 
                             COBiasAttemptCounter += 1;
 
-                            LogManager.LogInformation("AutoTDP COBios {0:0.000} Attempt {1} of {2}, FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
+                            //LogManager.LogInformation("AutoTDP COBios {0:0.000} Attempt {1} of {2}, FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
 
                             // for a mimimum of 100 to 1000 + 1400 msec + filter delay + debug
 
@@ -771,7 +771,7 @@ namespace HandheldCompanion.Managers
                         }
                         else
                         {
-                            LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
+                            //LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
                             COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
                             PTermEnabled = 1;
 
