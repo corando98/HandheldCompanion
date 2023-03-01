@@ -136,6 +136,7 @@ namespace HandheldCompanion.Managers
         private double PTermEnabled = 1;
         private double ITermEnabled = 1;
         private double ITerm = 0;
+        private double ITermPrev = 0;
         public static Stopwatch stopwatch;
         public static double TotalMilliseconds;
         public static double UpdateTimePreviousMilliseconds;
@@ -536,7 +537,7 @@ namespace HandheldCompanion.Managers
 
                     // P term, proportional control component
                     // Restrict to -/+ 10 Watt TDP
-                    double PTerm = Math.Clamp(ControllerGainKc * ControllerError,-10,10);
+                    double PTerm = Math.Clamp(ControllerGainKc * ControllerError,-10,10) * PTermEnabled;
 
                     //LogManager.LogInformation("P Term: {0:0.000} Enabled: {1:0}", PTerm, PTermEnabled);
 
@@ -545,12 +546,19 @@ namespace HandheldCompanion.Managers
                     // the time constant of the process, regardless of desired controller activity.
                     double ResetTimeTi = ClosedLoopTimeConstantTc;
                     // I = I + Ki*e*(t - t_prev)
-                    double Ki = ControllerGainKc / ResetTimeTi;
-                    ITerm = ITerm + Ki * ControllerError * (DeltaMilliSeconds / 1000);
-                    ITerm = Math.Clamp(ITerm, -10, 10);
+                    double IntegralGainKi = ControllerGainKc / ResetTimeTi;
+                    // @@@ Todo, fix wording/naming here
+                    // integral = integral_prior + error * iteration_time
+                    ITerm = ITermPrev + ControllerError * (DeltaMilliSeconds / 1000);
                     if (ITermEnabled == 0) { ITerm = 0; }
+                    ITermPrev = ITerm;
+                    
+                    
+                    double ITermFinal = Math.Clamp(IntegralGainKi * ITerm, -1 * (MaxTDP - MinTDP), MaxTDP - MinTDP);
+                    
 
-                    //LogManager.LogInformation("I Term: {0:0.000} Enabled: {1:0}", ITerm, ITermEnabled);
+                    //LogManager.LogInformation("I Parameters: ResetTimeTi {0:0.000} ControllerGainKc {1:0.000} Ki {2:0.000} DeltaTime {3:0.000} ControllerError {4:0.000} ITerm {5:0.000}", ResetTimeTi, ControllerGainKc, IntegralGainKi, DeltaMilliSeconds / 1000, ControllerError, ITerm);
+                    //LogManager.LogInformation("I Term x Ki: {0:0.000} Enabled: {1:0}", ITermFinal, ITermEnabled);
 
                     // D term, derivate control component
                     ProcessValueNew = (float)HWiNFOManager.process_value_fps;
@@ -569,7 +577,9 @@ namespace HandheldCompanion.Managers
                     // For next loop
                     ProcessValuePrevious = ProcessValueNew;
 
-                    TDPSetpoint = COBias + PTerm * PTermEnabled + ITerm * ITermEnabled + TDPSetpointDerivative * DTermEnabled;
+                    TDPSetpoint = COBias + PTerm * PTermEnabled + ITermFinal * ITermEnabled + TDPSetpointDerivative * DTermEnabled;
+
+                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, COBias, PTerm, ITermFinal, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -577,7 +587,7 @@ namespace HandheldCompanion.Managers
                 // Update all stored TDP values
                 StoredTDP[0] = StoredTDP[1] = StoredTDP[2] = Math.Clamp(TDPSetpoint,5,25);
 
-                LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                //LogManager.LogInformation("TDPSet;;;;{0:0.0000};{1:0.0};{2:0.000};{3:0.0000};{4:0.0000};{5:0.0000}", StoredTDP[0], WantedFPS, TDPSetpointInterpolator, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
 
                 // read current values and (re)apply requested TDP if needed
                 foreach (PowerType type in (PowerType[])Enum.GetValues(typeof(PowerType)))
@@ -761,7 +771,7 @@ namespace HandheldCompanion.Managers
                 else if (FPSSetpoint != FPSSetpointPrevious)
                 {
                     AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
-                    LogManager.LogInformation("AutoTDP USer FPS Request;{0:0.0}", FPSSetpoint);
+                    //LogManager.LogInformation("AutoTDP USer FPS Request;{0:0.0}", FPSSetpoint);
 
                     // Change has been caught, update for next cycles
                     FPSSetpointPrevious = FPSSetpoint;
@@ -796,8 +806,8 @@ namespace HandheldCompanion.Managers
                         // @@@ Todo, wait a bit in case TDP set is also still running
                         if (COBias == 0.0)
                         {
-                            COBias = TDPSetpoint = TDPActualFilteredValue;
-                            LogManager.LogInformation("AutoTDP First time, TDPSet = TDPActualFiltered {0:0.000}", TDPActualFilteredValue);
+                            COBias = TDPSetpoint = HWiNFOManager.process_value_tdp_actual;
+                            //LogManager.LogInformation("AutoTDP First time, TDPSet = TDPActualFiltered {0:0.000}", TDPActualFilteredValue);
                         }
 
                         // Check if FPS is within target, if not try again
