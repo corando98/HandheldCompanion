@@ -141,6 +141,7 @@ namespace HandheldCompanion.Managers
         public static double TotalMilliseconds;
         public static double UpdateTimePreviousMilliseconds;
         public static double DeltaMilliSeconds = -100;
+        double DTermEnabled = 0;
 
         // GPU limits
         private double FallbackGfxClock;
@@ -471,7 +472,7 @@ namespace HandheldCompanion.Managers
                     double DTerm = 0;
                     double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
                     double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
-                    double DTermEnabled = 0;
+                    
                     double COBiasUnused;
 
                     // Update timestamp
@@ -512,10 +513,6 @@ namespace HandheldCompanion.Managers
                     // https://controlguru.com/pi-control-of-the-heat-exchanger/
                     double ClosedLoopTimeConstantTc = 0.0;
 
-                    // Conservative
-                    // Tc is the larger of  10·Tp or 80·Өp
-                    ClosedLoopTimeConstantTc = Math.Max(10 * ProcessTimeConstantTp, 80 * DeadTimeThetap);
-
                     // Aggressive
                     // Tc is the larger of 0.1·Tp or 0.8·Өp
                     // Tested, goes unstable, fast.
@@ -525,10 +522,20 @@ namespace HandheldCompanion.Managers
                     // Tc is the larger of 1·Tp or 8·Өp
                     ClosedLoopTimeConstantTc = Math.Max(1 * ProcessTimeConstantTp, 8 * DeadTimeThetap);
 
+                    // Conservative
+                    // Tc is the larger of  10·Tp or 80·Өp
+                    ClosedLoopTimeConstantTc = Math.Max(10 * ProcessTimeConstantTp, 80 * DeadTimeThetap);
+
 
                     // Controller Gain Kc
-                    double ControllerGainKc = (1 / ProcessGainKp) * (ProcessTimeConstantTp / (DeadTimeThetap + ClosedLoopTimeConstantTc));
-                    // P Only cntroller, double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
+                    // P Only cntroller
+                    // double Kc = (0.2 / Kp) * Math.Pow((ProcessTimeConstantTp / Thetap), 1.22);
+                    // PI controller
+                    // double ControllerGainKc = (1 / ProcessGainKp) * (ProcessTimeConstantTp / (DeadTimeThetap + ClosedLoopTimeConstantTc));
+                    // PID Controller
+                    // The IMC tuning correlations for the Dependent, Ideal (Non-Interacting) PID form are
+                    // https://controlguru.com/pid-control-of-the-heat-exchanger/
+                    double ControllerGainKc = (1 / ProcessGainKp) * ((ProcessTimeConstantTp + 0.5 * DeadTimeThetap) / (ClosedLoopTimeConstantTc + 0.5 * DeadTimeThetap));
 
                     //LogManager.LogInformation("Process Gain: {0:0.000} ControllerGainKc: {1:0.000} ClosedLoopTimeConstantTc: {2:0.000}", ProcessGainKp, ControllerGainKc, ClosedLoopTimeConstantTc);
 
@@ -544,7 +551,10 @@ namespace HandheldCompanion.Managers
                     // I term, integral control component
                     // Reset Time Ti, Notice that reset time, Ti, is always set equal to
                     // the time constant of the process, regardless of desired controller activity.
-                    double ResetTimeTi = ClosedLoopTimeConstantTc;
+                    // PI controller reset time
+                    // double ResetTimeTi = ClosedLoopTimeConstantTc;
+                    // PID controller reset time
+                    double ResetTimeTi = ProcessTimeConstantTp + (0.5 * DeadTimeThetap);
                     // I = I + Ki*e*(t - t_prev)
                     double IntegralGainKi = ControllerGainKc / ResetTimeTi;
                     // @@@ Todo, fix wording/naming here
@@ -553,9 +563,7 @@ namespace HandheldCompanion.Managers
                     if (ITermEnabled == 0) { ITerm = 0; }
                     ITermPrev = ITerm;
                     
-                    
                     double ITermFinal = Math.Clamp(IntegralGainKi * ITerm, -1 * (MaxTDP - MinTDP), MaxTDP - MinTDP);
-                    
 
                     //LogManager.LogInformation("I Parameters: ResetTimeTi {0:0.000} ControllerGainKc {1:0.000} Ki {2:0.000} DeltaTime {3:0.000} ControllerError {4:0.000} ITerm {5:0.000}", ResetTimeTi, ControllerGainKc, IntegralGainKi, DeltaMilliSeconds / 1000, ControllerError, ITerm);
                     //LogManager.LogInformation("I Term x Ki: {0:0.000} Enabled: {1:0}", ITermFinal, ITermEnabled);
@@ -566,9 +574,10 @@ namespace HandheldCompanion.Managers
                     // First time around, initialise previous
                     if (ProcessValuePrevious == float.NaN) { ProcessValuePrevious = ProcessValueNew; }
 
+                    // PID Controller DerivativeTimeTd
+                    double DerivativeTimeTd = (ProcessTimeConstantTp * DeadTimeThetap) / ((2 * ProcessTimeConstantTp) + DeadTimeThetap);
                     DeltaError = ProcessValueNew - ProcessValuePrevious;
-                    DTerm = DeltaError / DeltaTimeSec;
-                    TDPSetpointDerivative = DFactor * DTerm;
+                    DTerm = ControllerGainKc * DerivativeTimeTd * (DeltaError / DeltaTimeSec);
 
                     //LogManager.LogInformation("Delta error {0:0.000} = ProcessValueNew {1:0.000} - ProcessValuePrev {2:0.000}", DeltaError, ProcessValueNew, ProcessValuePrevious);
                     //LogManager.LogInformation("D Term {0:0.00000} = DeltaError {1:0.000} / DeltaTime {2:0.000}", DTerm, DeltaError, DeltaTime);
@@ -576,10 +585,11 @@ namespace HandheldCompanion.Managers
 
                     // For next loop
                     ProcessValuePrevious = ProcessValueNew;
+                    if (DTermEnabled == 0) { DTerm = 0; ProcessValuePrevious = 0; }
 
-                    TDPSetpoint = COBias + PTerm * PTermEnabled + ITermFinal * ITermEnabled + TDPSetpointDerivative * DTermEnabled;
+                    TDPSetpoint = COBias + PTerm * PTermEnabled + ITermFinal * ITermEnabled + DTerm * DTermEnabled;
 
-                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, COBias, PTerm, ITermFinal, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
+                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, COBias, PTerm, ITermFinal, DTerm, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -788,12 +798,14 @@ namespace HandheldCompanion.Managers
                     AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
                     PTermEnabled = 0;
                     ITermEnabled = 0;
+                    DTermEnabled = 0;
                 }
 
                 if (AutoTDPState == AUTO_TDP_STATE_CO_BIAS) 
                 {
                     PTermEnabled = 0;
                     ITermEnabled = 0;
+                    DTermEnabled = 0;
 
                     // Prevent underflow
                     if (COBiasAttemptTimeoutMilliSec < 0){ COBiasAttemptTimeoutMilliSec = 0; }
@@ -840,6 +852,7 @@ namespace HandheldCompanion.Managers
                             COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
                             PTermEnabled = 1;
                             ITermEnabled = 1;
+                            DTermEnabled = 1;
 
                             AutoTDPState = AUTO_TDP_STATE_PID_CONTROL;
                         }                        
