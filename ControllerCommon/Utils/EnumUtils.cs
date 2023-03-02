@@ -17,7 +17,7 @@ namespace ControllerCommon.Utils
             if (root is not null)
                 return root;
 
-            LogManager.LogError("Missing localization value for enum: {0}", key);
+            //LogManager.LogError("Missing localization value for enum: {0}", key);
 
             // return description otherwise
             DescriptionAttribute attribute = null;

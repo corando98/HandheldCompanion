@@ -282,5 +282,53 @@ namespace HandheldCompanion.Managers
         {
                 ReadSensors();
         }
+
+        // @@@ Todo, fix daisy chained senser interval delay from RTSS to HWInfo to HC, possibly 100 msec more recent data
+        public static double CurrentFPS() 
+        {
+            double CurrentFPS = 0;
+
+            try
+            {
+                for (uint index = 0; index < HWiNFOMemory.dwNumReadingElements; ++index)
+                {
+                    using (MemoryMappedViewStream viewStream = MemoryMapped.CreateViewStream(HWiNFOMemory.dwOffsetOfReadingSection + index * HWiNFOMemory.dwSizeOfReadingElement, HWiNFOMemory.dwSizeOfReadingElement, MemoryMappedFileAccess.Read))
+                    {
+                        byte[] buffer = new byte[(int)HWiNFOMemory.dwSizeOfReadingElement];
+                        viewStream.Read(buffer, 0, (int)HWiNFOMemory.dwSizeOfReadingElement);
+                        GCHandle gcHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+                        SensorElement structure = (SensorElement)Marshal.PtrToStructure(gcHandle.AddrOfPinnedObject(), typeof(SensorElement));
+                        gcHandle.Free();
+                        Sensors[(int)structure.dwSensorIndex].Elements.Add(structure);
+                    }
+                }
+
+                foreach (Sensor Sensor in Sensors)
+                {
+                    if (Sensor.NameOrig == "RTSS")
+                    {
+
+                        foreach (HWiNFOManager.SensorElement Element in Sensor.Elements)
+                        {
+                            if (Element.szLabelOrig == "Framerate")
+                            {
+                                CurrentFPS = Element.Value;
+                            }
+                        }
+                    }
+
+                }
+
+            }
+            catch
+            {
+                // HWiNFO is not running anymore or 12-HOUR LIMIT has triggered
+                MemoryMapped = null;
+                Failed?.Invoke();
+            }
+
+            return CurrentFPS;
+        }
+            
     }
 }

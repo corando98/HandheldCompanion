@@ -142,6 +142,8 @@ namespace HandheldCompanion.Managers
         public static double UpdateTimePreviousMilliseconds;
         public static double DeltaMilliSeconds = -100;
         double DTermEnabled = 0;
+        double[] TDPSetpointHistory = new double[20];
+        double TDPSetpointValid = 10.0;
 
         // GPU limits
         private double FallbackGfxClock;
@@ -254,7 +256,7 @@ namespace HandheldCompanion.Managers
                 bool MSRdone = false;
 
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
-                int algo_choice = 4;
+                int algo_choice = 5;
 
                 if (algo_choice == 1)
                 {
@@ -592,6 +594,59 @@ namespace HandheldCompanion.Managers
                     LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, COBias, PTerm, ITermFinal, DTerm, TDPSetpointDerivative, PerformanceCurveError, FPSRatio);
                 }
 
+                else if (algo_choice == 5)
+                {
+
+                    // In case we don't have usable data, skip this round.
+                    if (HWiNFOManager.process_value_tdp_actual == 0.0 || HWiNFOManager.process_value_fps == 0.0 || HWiNFOManager.process_value_fps == 0.0)
+                    {
+                        return;
+                    }
+
+                    // @@@ Todo, use 1300 msec older tdp setpoint
+                    // @@@ todo, use filtered FPS actual
+                    // Update performance curve for current scene and determine new TDP setpoint
+
+                    // Get latest from HWinfo FPS
+                    // @@@ Todo, fix daisy chained senser interval delay from RTSS to HWInfo to HC,
+                    // possibly 100 msec more recent data and thus earlier correction and thus better.
+                    double ProcessValueFPS = HWiNFOManager.CurrentFPS();
+
+                    TDPSetpointInterpolator = DetermineControllerOutputBias(WantedFPS,
+                                                                            ProcessValueFPS,
+                                                                            TDPSetpointValid);
+
+                    // D term, derivate control component
+                    // Used as a damper
+                    double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
+
+                    // Delta error
+                    // First time around, initialise previous
+                    if (ProcessValuePrevious == float.NaN || ProcessValuePrevious == 0.0) { ProcessValuePrevious = ProcessValueFPS; }
+                    double DeltaError = ProcessValueFPS - ProcessValuePrevious;
+                    // For next loop
+                    ProcessValuePrevious = ProcessValueFPS;
+
+                    // Delta time, update timestamp
+                    double DeltaTimeSec = (stopwatch.Elapsed.TotalMilliseconds - UpdateTimePreviousMilliseconds) / 1000;
+                    UpdateTimePreviousMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+
+                    double DTerm = DeltaError / DeltaTimeSec;
+                    TDPSetpointDerivative = DFactor * DTerm;
+
+                    //LogManager.LogInformation("Delta error {0:0.000} = ProcessValueNew {1:0.000} - ProcessValuePrev {2:0.000}", DeltaError, ProcessValueNew, ProcessValuePrevious);
+                    //LogManager.LogInformation("D Term {0:0.00000} = DeltaError {1:0.000} / DeltaTime {2:0.000}", DTerm, DeltaError, DeltaTime);
+                    //LogManager.LogInformation("D adds: {0:0.00000}", (DFactor * DTerm));
+
+                    // Temp disable
+                    DTermEnabled = 0;
+
+                    TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative * DTermEnabled;
+
+                                                                           
+                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000};{7:0.0000}", WantedFPS, TDPSetpoint, TDPSetpointValid, COBias, TDPSetpointInterpolator, TDPSetpointDerivative, ProcessValueFPS, FPSRatio);
+                }
+
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
 
                 // Update all stored TDP values
@@ -770,6 +825,16 @@ namespace HandheldCompanion.Managers
                 Double FPSSetpoint = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
                 if (FPSSetpointPrevious == Double.NaN) { FPSSetpointPrevious = FPSSetpoint; }
 
+                // TDP Setpoint valid rolling buffer
+                // As actual FPS has a ~1300 msec delay, in some cases it's better to use the TDP setpoint from 1300 msec earlier
+                // Use rolling array buffer for that.
+                Array.Copy(TDPSetpointHistory, 0, TDPSetpointHistory, 1, TDPSetpointHistory.Length - 1);
+                // Put current TDP setpoint into array
+                TDPSetpointHistory[0] = TDPSetpoint;
+                // Valid TDP setpoint for current FPS is n time older TDP
+                //TDPSetpointValid = TDPSetpointHistory[0];
+                TDPSetpointValid = (TDPSetpointHistory[3] + TDPSetpointHistory[12]) / 2;
+
                 // Detect scene change
                 // Scene change percentage for certain duration
                 int PerformanceCurveErrorDuration = 0;
@@ -799,6 +864,7 @@ namespace HandheldCompanion.Managers
                     PTermEnabled = 0;
                     ITermEnabled = 0;
                     DTermEnabled = 0;
+                    
                 }
 
                 if (AutoTDPState == AUTO_TDP_STATE_CO_BIAS) 
@@ -820,6 +886,9 @@ namespace HandheldCompanion.Managers
                         {
                             COBias = TDPSetpoint = HWiNFOManager.process_value_tdp_actual;
                             //LogManager.LogInformation("AutoTDP First time, TDPSet = TDPActualFiltered {0:0.000}", TDPActualFilteredValue);
+
+                            // Fill TDP setpoint array with all same values
+                            Array.Fill(TDPSetpointHistory, TDPSetpoint);
                         }
 
                         // Check if FPS is within target, if not try again
@@ -832,7 +901,7 @@ namespace HandheldCompanion.Managers
                         // @@@ Todo, really need to use older FPS setpoint here in case PID controller is running
                         if (COBiasAttemptCounter < COBiasAttemptAmount && FPSErrorPercentage > FPSErrorPerctentageLimit)
                         {
-                            COBias = DetermineControllerOutputBias(FPSSetpoint,
+                            COBias = TDPSetpoint = DetermineControllerOutputBias(FPSSetpoint,
                                                                    FPSActual,
                                                                    TDPSetpoint);
 
@@ -892,7 +961,7 @@ namespace HandheldCompanion.Managers
             double ControllerOutputBias = 0.0;
             double ExpectedFPS = 0.0;
             TDPEarlierSetOrActual = Math.Clamp(TDPEarlierSetOrActual, MinTDP, MaxTDP); // prevent out of bounds noise
-            ActualFPS = Math.Clamp(ActualFPS, 5, 600); // Prevent using exterme FPS values.
+            ActualFPS = Math.Clamp(ActualFPS, 20, 90); // Prevent using exterme FPS values.
             int i;
 
             // @@@ Todo, determine node amount
