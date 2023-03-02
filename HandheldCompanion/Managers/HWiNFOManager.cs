@@ -112,6 +112,7 @@ namespace HandheldCompanion.Managers
         public static double process_value_fps;
         public static double process_value_tdp_actual;
         public static double process_value_frametime_ms;
+        double CurrentFPS = 0;
 
         static HWiNFOManager()
         {
@@ -286,8 +287,6 @@ namespace HandheldCompanion.Managers
         // @@@ Todo, fix daisy chained senser interval delay from RTSS to HWInfo to HC, possibly 100 msec more recent data
         public static double CurrentFPS() 
         {
-            double CurrentFPS = 0;
-
             try
             {
                 for (uint index = 0; index < HWiNFOMemory.dwNumReadingElements; ++index)

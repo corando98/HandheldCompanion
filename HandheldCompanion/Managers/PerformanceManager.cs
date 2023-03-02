@@ -644,7 +644,7 @@ namespace HandheldCompanion.Managers
                     TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative * DTermEnabled;
 
                                                                            
-                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000};{7:0.0000}", WantedFPS, TDPSetpoint, TDPSetpointValid, COBias, TDPSetpointInterpolator, TDPSetpointDerivative, ProcessValueFPS, FPSRatio);
+                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, TDPSetpointValid, TDPSetpointInterpolator, TDPSetpointDerivative, ProcessValueFPS, FPSRatio);
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -832,8 +832,8 @@ namespace HandheldCompanion.Managers
                 // Put current TDP setpoint into array
                 TDPSetpointHistory[0] = TDPSetpoint;
                 // Valid TDP setpoint for current FPS is n time older TDP
-                //TDPSetpointValid = TDPSetpointHistory[0];
-                TDPSetpointValid = (TDPSetpointHistory[3] + TDPSetpointHistory[12]) / 2;
+                // @@@ Todo, need to put this in a generic formula taking into account dead times, loop time, settling time etc
+                TDPSetpointValid = TDPSetpointHistory[12] + (TDPSetpointHistory[2] - TDPSetpointHistory[12]) * 0.68;
 
                 // Detect scene change
                 // Scene change percentage for certain duration
