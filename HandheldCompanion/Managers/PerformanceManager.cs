@@ -674,10 +674,10 @@ namespace HandheldCompanion.Managers
                     double TDPAdjustment = ControllerError * TDPSetpointValid / ProcessValueFPS;
                     // Going lower or higher, we need to reduce the amount of TDP by a factor... or not apparently?!
                     if (ControllerError < 0.0) { 
-                        TDPAdjustment *= 1.0; 
+                        TDPAdjustment *= 1.1; 
                     }
                     else {
-                        TDPAdjustment *= 1.0;
+                        TDPAdjustment *= 0.8;
                     }
 
                     // Todo, If we're close to target for 5 seconds, start reduction ripple
