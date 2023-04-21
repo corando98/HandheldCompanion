@@ -112,7 +112,7 @@ namespace HandheldCompanion.Managers
         public static double process_value_fps;
         public static double process_value_tdp_actual;
         public static double process_value_frametime_ms;
-        double CurrentFPS = 0;
+        private static double ProcessValueCurrentFPS = 0.0;
 
         static HWiNFOManager()
         {
@@ -311,7 +311,7 @@ namespace HandheldCompanion.Managers
                         {
                             if (Element.szLabelOrig == "Framerate")
                             {
-                                CurrentFPS = Element.Value;
+                                ProcessValueCurrentFPS = Element.Value;
                             }
                         }
                     }
@@ -326,7 +326,7 @@ namespace HandheldCompanion.Managers
                 Failed?.Invoke();
             }
 
-            return CurrentFPS;
+            return ProcessValueCurrentFPS;
         }
             
     }

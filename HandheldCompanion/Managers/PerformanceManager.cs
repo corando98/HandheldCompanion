@@ -256,7 +256,7 @@ namespace HandheldCompanion.Managers
                 bool MSRdone = false;
 
                 double WantedFPS = SettingsManager.GetDouble("QuickToolsPerformanceAutoTDPFPSValue");
-                int algo_choice = 5;
+                int algo_choice = 6;
 
                 if (algo_choice == 1)
                 {
@@ -307,10 +307,10 @@ namespace HandheldCompanion.Managers
                     // Figure out between which two nodes the current TDP setpoint is
                     i = Array.FindIndex(X, k => Math.Clamp(TDPSetpoint, 5, 25) <= k);
 
-                    if (i == -1) 
+                    if (i == -1)
                     {
                         LogManager.LogInformation("Array.FindIndex out of bounds for TDPSetpoint of: {0:000}", TDPSetpoint);
-                        return; 
+                        return;
                     }
 
                     // Interpolate between those two points
@@ -418,12 +418,13 @@ namespace HandheldCompanion.Managers
                     if (TestRoundCounter == 2 && TestStepCounter > 0 && TestStepCounter < 22) { FPSMeasuredRound2[TestStepCounter - 1] = HWiNFOManager.process_value_fps; }
                     if (TestRoundCounter == 3 && TestStepCounter > 0 && TestStepCounter < 22) { FPSMeasuredRound3[TestStepCounter - 1] = HWiNFOManager.process_value_fps; }
 
-                    if (TestStepCounter == 22) { 
+                    if (TestStepCounter == 22)
+                    {
                         TestRoundCounter += 1;
                         TestStepCounter = 0;
 
-                        if (TestRoundCounter == 4) 
-                        {    
+                        if (TestRoundCounter == 4)
+                        {
                             TestRoundCounter = 1;
                             // Print results of last 3 tests
                             // Header
@@ -439,7 +440,7 @@ namespace HandheldCompanion.Managers
                             // Example
                             // private double[,] PerformanceCurve = new double[,] {  { 5, 15 }, { 6, 18 }, { 7, 25 }, { 8, 36 }, { 9, 46 }, { 10, 54 }, { 11, 59 }, { 12, 64 }, { 13, 68 }, { 14, 71 }, { 15, 74 }, { 16, 73}, { 17, 74 }, { 18, 75 }, { 19, 76 }, { 20, 80 },{ 21, 81 }, { 22, 81 }, { 23, 81 }, { 24, 82 }, { 25, 84 }};
                             string PerformanceCurveText = "private double[,] PerformanceCurve = new double[,] {";
-                            
+
                             for (int idx = 0; idx < 21; idx++)
                             {
                                 PerformanceCurveText += " { " + idx + 5 + ", " + (FPSMeasuredRound1[idx] + FPSMeasuredRound2[idx] + FPSMeasuredRound3[idx]) / 3 + " },";
@@ -474,7 +475,7 @@ namespace HandheldCompanion.Managers
                     double DTerm = 0;
                     double DeltaTimeSec = INTERVAL_DEFAULT / 1000; // @todo, replace with better measured timer 
                     double DFactor = -0.07; // 0.09 caused issues at 30 FPS, 0.18 goes even more unstable
-                    
+
                     double COBiasUnused;
 
                     // Update timestamp
@@ -546,7 +547,7 @@ namespace HandheldCompanion.Managers
 
                     // P term, proportional control component
                     // Restrict to -/+ 10 Watt TDP
-                    double PTerm = Math.Clamp(ControllerGainKc * ControllerError,-10,10) * PTermEnabled;
+                    double PTerm = Math.Clamp(ControllerGainKc * ControllerError, -10, 10) * PTermEnabled;
 
                     //LogManager.LogInformation("P Term: {0:0.000} Enabled: {1:0}", PTerm, PTermEnabled);
 
@@ -564,7 +565,7 @@ namespace HandheldCompanion.Managers
                     ITerm = ITermPrev + ControllerError * (DeltaMilliSeconds / 1000);
                     if (ITermEnabled == 0) { ITerm = 0; }
                     ITermPrev = ITerm;
-                    
+
                     double ITermFinal = Math.Clamp(IntegralGainKi * ITerm, -1 * (MaxTDP - MinTDP), MaxTDP - MinTDP);
 
                     //LogManager.LogInformation("I Parameters: ResetTimeTi {0:0.000} ControllerGainKc {1:0.000} Ki {2:0.000} DeltaTime {3:0.000} ControllerError {4:0.000} ITerm {5:0.000}", ResetTimeTi, ControllerGainKc, IntegralGainKi, DeltaMilliSeconds / 1000, ControllerError, ITerm);
@@ -643,8 +644,50 @@ namespace HandheldCompanion.Managers
 
                     TDPSetpoint = TDPSetpointInterpolator + TDPSetpointDerivative * DTermEnabled;
 
-                                                                           
+
                     LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000};{5:0.0000};{6:0.0000}", WantedFPS, TDPSetpoint, TDPSetpointValid, TDPSetpointInterpolator, TDPSetpointDerivative, ProcessValueFPS, FPSRatio);
+                }
+
+                else if (algo_choice == 6)
+                {
+                    // In case we don't have usable data, skip this round.
+                    if (HWiNFOManager.process_value_tdp_actual == 0.0 || HWiNFOManager.process_value_fps == 0.0)
+                    {
+                        return;
+                    }
+
+                    double ProcessValueFPS = HWiNFOManager.CurrentFPS();
+                    // Be realistic with expectd proces value
+                    ProcessValueFPS = Math.Clamp(ProcessValueFPS, 1, 500);
+
+
+                    // Todo, use predictive trend line on FPS
+                    // Determine error amount
+                    double ControllerError = WantedFPS - ProcessValueFPS; // for now, intentially unfiltered
+
+                    // Clamp error amount that is correct in one cycle
+                    // -5 +15, going lower always overshoots (not safe, leads to instability), going higher always undershoots (which is safe)
+                    // Todo, adjust clamp in case of actual FPS being 2x requested FPS, menu's going to 300+ fps for example.
+                    ControllerError = Math.Clamp(ControllerError, -5, 15);
+
+                    // Based on FPS/TDP ratio, determine how much adjustment is needed
+                    double TDPAdjustment = ControllerError * TDPSetpointValid / ProcessValueFPS;
+                    // Going lower or higher, we need to reduce the amount of TDP by a factor... or not apparently?!
+                    if (ControllerError < 0.0) { 
+                        TDPAdjustment *= 1.0; 
+                    }
+                    else {
+                        TDPAdjustment *= 1.0;
+                    }
+
+                    // Todo, If we're close to target for 5 seconds, start reduction ripple
+
+                    // Determine final setpoint
+                    TDPSetpoint += TDPAdjustment;
+                    TDPSetpoint = Math.Clamp(TDPSetpoint, 5, 25);
+
+                    // Log
+                    LogManager.LogInformation("TDPSet;;;;{0:0.0};{1:0.000};{2:0.0000};{3:0.0000};{4:0.0000}", WantedFPS, TDPSetpoint, TDPSetpointValid, TDPAdjustment, ProcessValueFPS);
                 }
 
                 // HWiNFOManager.process_value_tdp_actual or set as ratio?
@@ -861,9 +904,6 @@ namespace HandheldCompanion.Managers
                 if (AutoTDPState == AUTO_TDP_STATE_IDLE)
                 {
                     AutoTDPState = AUTO_TDP_STATE_CO_BIAS;
-                    PTermEnabled = 0;
-                    ITermEnabled = 0;
-                    DTermEnabled = 0;
                     
                 }
 
@@ -874,57 +914,11 @@ namespace HandheldCompanion.Managers
                     DTermEnabled = 0;
 
                     // Prevent underflow
-                    if (COBiasAttemptTimeoutMilliSec < 0){ COBiasAttemptTimeoutMilliSec = 0; }
+                    if (COBiasAttemptTimeoutMilliSec <= 0){ COBiasAttemptTimeoutMilliSec = 0; }
 
                     // Once COBias has been set, wait untill FPS responce 
                     if (COBiasAttemptTimeoutMilliSec == 0)
-                    {
-
-                        // @@@ Todo, improve, by initially waiting for a bit or having filtered value sensor running earlier?
-                        // @@@ Todo, wait a bit in case TDP set is also still running
-                        if (COBias == 0.0)
-                        {
-                            COBias = TDPSetpoint = HWiNFOManager.process_value_tdp_actual;
-                            //LogManager.LogInformation("AutoTDP First time, TDPSet = TDPActualFiltered {0:0.000}", TDPActualFilteredValue);
-
-                            // Fill TDP setpoint array with all same values
-                            Array.Fill(TDPSetpointHistory, TDPSetpoint);
-                        }
-
-                        // Check if FPS is within target, if not try again
-                        // If max attempts has been reached, then move on to PID control.
-                        double FPSErrorPercentage = (Math.Abs(FPSSetpoint - FPSActual) / FPSSetpoint) * 100;
-                        double FPSErrorPerctentageLimit = 5;
-
-
-                        // @@@ Todo, no need for more attempts if TDP is at max or min and FPS is still not met...
-                        // @@@ Todo, really need to use older FPS setpoint here in case PID controller is running
-                        if (COBiasAttemptCounter < COBiasAttemptAmount && FPSErrorPercentage > FPSErrorPerctentageLimit)
-                        {
-                            COBias = TDPSetpoint = DetermineControllerOutputBias(FPSSetpoint,
-                                                                   FPSActual,
-                                                                   TDPSetpoint);
-
-                            COBiasAttemptCounter += 1;
-
-                            //LogManager.LogInformation("AutoTDP COBios {0:0.000} Attempt {1} of {2}, FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
-
-                            // for a mimimum of 100 to 1000 + 1400 msec + filter delay + debug
-
-                            // @@@ Todo, replace interval default with timer time remaining (rounded up)
-                            //https://stackoverflow.com/questions/10699517/how-do-i-check-how-much-time-remains-before-timer-fires-next-event
-                            COBiasAttemptTimeoutMilliSec = (short)(INTERVAL_DEFAULT + FPSResponseTimeMilliSec + 300 + 100);
-                        }
-                        else
-                        {
-                            //LogManager.LogInformation("AutoTDP Finished with COBios {0:0.000} Attempt {1} of {2} with FPS Error percentage {3:0.000}, FPSActual {4:0.000}, FPSSet {5:0.000}", COBias, COBiasAttemptCounter, COBiasAttemptAmount, FPSErrorPercentage, FPSActual, FPSSetpoint);
-                            COBiasAttemptCounter = 0; // @@@ Todo, aside from finishing and restarting application, need another place to reset this
-                            PTermEnabled = 1;
-                            ITermEnabled = 1;
-                            DTermEnabled = 1;
-
-                            AutoTDPState = AUTO_TDP_STATE_PID_CONTROL;
-                        }                        
+                    {                   
 
                         StartTDPWatchdog();
                         stopwatch.Start();

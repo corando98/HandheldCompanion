@@ -1349,7 +1349,7 @@ namespace HandheldCompanion.Properties {
         ///  &quot;path&quot;: &quot;Playnite.FullscreenApp.exe&quot;,
         ///  &quot;executable&quot;: &quot;Playnite.FullscreenApp.exe&quot;,
         ///  &quot;isEnabled&quot;: true,
-        ///  &quot;whitelisted&quot;: true
+        ///  &quot;use_wrapper&quot;: true
         ///}.
         /// </summary>
         public static string Playnite_FullscreenApp_json {
