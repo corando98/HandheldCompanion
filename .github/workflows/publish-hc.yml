@@ -65,7 +65,7 @@ jobs:
           (Get-Content -Path ./HandheldCompanion/HandheldCompanion.csproj) -replace "<Version>\d+(?:\.\d+){3}</Version>", "<Version>${{ inputs.releaseVersion }}</Version>" | Out-File ./HandheldCompanion/HandheldCompanion.csproj
       
       - name: List directory contents
-        run: ls -la 
+        run: Get-ChildItem -Path .
       
       - name: Install Innosetup
         run: |
@@ -94,28 +94,28 @@ jobs:
           # Artifact name
           name: debug # optional, default is artifact
           # A file, directory or wildcard pattern that describes what to upload
-          path: ./install/*
+          path: ./*
           # The desired behavior if no files are found using the provided path.
           warn: Warn
 
-      - name: Create Release Pull Request
-        if: inputs.releaseVersion != ''
-        uses: peter-evans/create-pull-request@v5
-        with:
-          branch: release/${{ inputs.releaseVersion }}
-          title: 'Release ${{ inputs.releaseVersion }}'
-          commit-message: 'Release ${{ inputs.releaseVersion }}'
-          body: 'Release ${{ inputs.releaseVersion }}. Triggered by ${{ github.actor }}'
+#       - name: Create Release Pull Request
+#         if: inputs.releaseVersion != ''
+#         uses: peter-evans/create-pull-request@v5
+#         with:
+#           branch: release/${{ inputs.releaseVersion }}
+#           title: 'Release ${{ inputs.releaseVersion }}'
+#           commit-message: 'Release ${{ inputs.releaseVersion }}'
+#           body: 'Release ${{ inputs.releaseVersion }}. Triggered by ${{ github.actor }}'
           
-      - name: Create Release
-        if: inputs.releaseVersion != ''
-        uses: softprops/action-gh-release@v0.1.15
-        with:
-          body_path: .github/workflows/RELEASE_FORMAT.txt
-          tag_name: ${{ inputs.releaseVersion }}
-          name: "Build ${{ inputs.releaseVersion }}"
-          draft: true
-          fail_on_unmatched_files: true
-          files: |
-            ./install/HandheldCompanion-${{ inputs.releaseVersion }}.exe
-            ./install/HandheldCompanion-${{ inputs.releaseVersion }}-offline.exe
+#       - name: Create Release
+#         if: inputs.releaseVersion != ''
+#         uses: softprops/action-gh-release@v0.1.15
+#         with:
+#           body_path: .github/workflows/RELEASE_FORMAT.txt
+#           tag_name: ${{ inputs.releaseVersion }}
+#           name: "Build ${{ inputs.releaseVersion }}"
+#           draft: true
+#           fail_on_unmatched_files: true
+#           files: |
+#             ./install/HandheldCompanion-${{ inputs.releaseVersion }}.exe
+#             ./install/HandheldCompanion-${{ inputs.releaseVersion }}-offline.exe
