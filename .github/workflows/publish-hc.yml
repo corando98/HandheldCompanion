@@ -63,7 +63,10 @@ jobs:
           (Get-Content -Path ./HandheldCompanion-Offline.iss) -replace "#define MyAppVersion `'\d+(?:\.\d+){3}`'", "#define MyAppVersion '${{ inputs.releaseVersion }}'" | Out-File ./HandheldCompanion-Offline.iss
           (Get-Content -Path ./ControllerService/AssemblyInfo1.cs) -replace '\d+(?:\.\d+){3}', '${{ inputs.releaseVersion }}' | Out-File ./ControllerService/AssemblyInfo1.cs
           (Get-Content -Path ./HandheldCompanion/HandheldCompanion.csproj) -replace "<Version>\d+(?:\.\d+){3}</Version>", "<Version>${{ inputs.releaseVersion }}</Version>" | Out-File ./HandheldCompanion/HandheldCompanion.csproj
-
+      
+      - name: List directory contents
+        run: ls -la 
+      
       - name: Install Innosetup
         run: |
           choco install innosetup --version=${{ env.INNO_VERSION }} --force
